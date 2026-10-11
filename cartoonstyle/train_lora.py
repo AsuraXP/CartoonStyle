@@ -109,24 +109,58 @@ def get_lora_state_dict(unet) -> dict:
     return sd
 
 
+def _find_lora_mixin():
+    """StableDiffusionXLLoraLoaderMixin has moved across diffusers versions."""
+    for mod_name in ("diffusers.loaders.lora_pipeline", "diffusers.loaders",
+                     "diffusers.loaders.lora", "diffusers"):
+        try:
+            mod = __import__(mod_name, fromlist=["StableDiffusionXLLoraLoaderMixin"])
+            mixin = getattr(mod, "StableDiffusionXLLoraLoaderMixin", None)
+            if mixin is not None:
+                return mixin
+        except ImportError:
+            continue
+    return None
+
+
 def save_lora(unet, text_encoder, text_encoder_2, out_dir: str, args) -> None:
-    from diffusers.loaders.lora import StableDiffusionXLLoraLoaderMixin
+    import json
 
     os.makedirs(out_dir, exist_ok=True)
-    unet_sd = get_lora_state_dict(unet)
-    kwargs = {"unet_lora_layers": unet_sd}
-    if args.train_text_encoders:
-        try:
-            kwargs["text_encoder_lora_layers"] = get_lora_state_dict(text_encoder)
-            kwargs["text_encoder_2_lora_layers"] = get_lora_state_dict(text_encoder_2)
-        except Exception:  # noqa: BLE001
-            pass
-    StableDiffusionXLLoraLoaderMixin.save_lora_weights(save_directory=out_dir, **kwargs)
-    # also persist the raw peft adapter so --resume is exact
+
+    # 1) PRIMARY: raw peft adapter (adapter_config.json + adapter_model.safetensors).
+    #    Consumed by --resume and by generate.py's PeftModel merge path. Version-proof.
+    saved_peft = False
     try:
         unet.save_pretrained(os.path.join(out_dir, "peft"))
-    except Exception:  # noqa: BLE001
-        pass
+        saved_peft = True
+    except Exception as e:  # noqa: BLE001
+        print(f"[save] peft adapter save failed: {e}", flush=True)
+
+    # 2) BONUS: standard diffusers pytorch_lora_weights.safetensors (ecosystem compat).
+    mixin = _find_lora_mixin()
+    if mixin is not None:
+        try:
+            kwargs = {"unet_lora_layers": get_lora_state_dict(unet)}
+            if args.train_text_encoders:
+                try:
+                    kwargs["text_encoder_lora_layers"] = get_lora_state_dict(text_encoder)
+                    kwargs["text_encoder_2_lora_layers"] = get_lora_state_dict(text_encoder_2)
+                except Exception:  # noqa: BLE001
+                    pass
+            mixin.save_lora_weights(save_directory=out_dir, **kwargs)
+        except Exception as e:  # noqa: BLE001
+            print(f"[save] diffusers-format save skipped: {e}", flush=True)
+    else:
+        print("[save] diffusers mixin not found; peft format only", flush=True)
+
+    with open(os.path.join(out_dir, "lora_meta.json"), "w", encoding="utf-8") as f:
+        json.dump({"format": "cartoonstyle-peft", "rank": args.rank,
+                   "alpha": args.alpha or args.rank, "base": args.base,
+                   "trigger": args.trigger}, f)
+
+    if not saved_peft:
+        raise RuntimeError(f"could not save LoRA adapter to {out_dir}")
 
 
 def main():

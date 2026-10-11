@@ -187,6 +187,7 @@ python -m cartoonstyle.upscale --in-dir raw --out-dir hd
 
 | Symptom | Fix |
 |---|---|
+| `ModuleNotFoundError: No module named 'diffusers.loaders.lora'` at checkpoint save | fixed in latest code — `git pull`, restart training (add `--save-every 100`). Saves are now PEFT-format first (version-proof), diffusers-format as bonus. |
 | `ImportError: Found an incompatible version of torchao` during `train_lora` | `!pip uninstall -y torchao` then re-run. Kaggle ships torchao 0.10.0 and peft raises at LoRA setup just because it's installed (we never use it). The notebook setup cell does this automatically. |
 | CUDA out of memory | add `--batch 1 --lowvram` to `generate`; for training lower `--width/--height` to 768 |
 | `accelerate: command not found` | re-run the setup cell's `pip install -r requirements.txt` |

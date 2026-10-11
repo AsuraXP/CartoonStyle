@@ -46,6 +46,43 @@ def parse_args():
     return p.parse_args()
 
 
+def load_style_lora(pipe, style_lora: str, scale: float) -> str:
+    """Load a style LoRA in any known format. Returns 'std' or 'peft'."""
+
+    def _peft_merge(peft_dir: str) -> None:
+        from peft import PeftModel
+
+        unet = PeftModel.from_pretrained(pipe.unet, peft_dir)
+        if scale != 1.0:
+            for module in unet.modules():
+                lora_B = getattr(module, "lora_B", None)
+                if lora_B is not None:
+                    for k in lora_B:
+                        lora_B[k].weight.data *= scale
+        pipe.unet = unet.merge_and_unload()
+
+    if os.path.isdir(style_lora):
+        std = os.path.join(style_lora, "pytorch_lora_weights.safetensors")
+        if os.path.exists(std):
+            try:
+                pipe.load_lora_weights(style_lora, adapter_name="style")
+                pipe.set_adapters(["style"], adapter_weights=[scale])
+                return "std"
+            except Exception as e:  # noqa: BLE001
+                print(f"[worker] diffusers-format load failed ({e}); trying peft format", flush=True)
+        for cand in (style_lora, os.path.join(style_lora, "peft")):
+            if os.path.exists(os.path.join(cand, "adapter_config.json")):
+                _peft_merge(cand)
+                return "peft"
+        raise SystemExit(
+            f"No recognizable LoRA in {style_lora} "
+            "(expected pytorch_lora_weights.safetensors or peft/adapter_config.json)")
+    pipe.load_lora_weights(os.path.dirname(os.path.abspath(style_lora)) or ".",
+                           weight_name=os.path.basename(style_lora), adapter_name="style")
+    pipe.set_adapters(["style"], adapter_weights=[scale])
+    return "std"
+
+
 def build_pipeline(cfg: dict, lowvram: bool = False):
     import torch
     from diffusers import EulerDiscreteScheduler, StableDiffusionXLPipeline
@@ -74,19 +111,10 @@ def build_pipeline(cfg: dict, lowvram: bool = False):
             fused = True
         except Exception as e:  # noqa: BLE001
             print(f"[worker] fuse_lora failed ({e}); using dual adapters", flush=True)
-        if os.path.isdir(style_lora):
-            pipe.load_lora_weights(style_lora, adapter_name="style")
-        else:
-            pipe.load_lora_weights(
-                os.path.dirname(os.path.abspath(style_lora)) or ".",
-                weight_name=os.path.basename(style_lora),
-                adapter_name="style",
-            )
-        if fused:
-            pipe.set_adapters(["style"], adapter_weights=[style_scale])
-        else:
+        fmt = load_style_lora(pipe, style_lora, style_scale)
+        if fmt == "std" and not fused:
             pipe.set_adapters(["lightning", "style"], adapter_weights=[1.0, style_scale])
-        print(f"[worker] style LoRA loaded: {style_lora} @ {style_scale}", flush=True)
+        print(f"[worker] style LoRA loaded ({fmt}): {style_lora} @ {style_scale}", flush=True)
     else:
         if not fused:
             try:

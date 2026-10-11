@@ -152,7 +152,8 @@ def main():
     text_encoder = CLIPTextModel.from_pretrained(args.base, subfolder="text_encoder", torch_dtype=weight_dtype)
     text_encoder_2 = CLIPTextModelWithProjection.from_pretrained(
         args.base, subfolder="text_encoder_2", torch_dtype=weight_dtype)
-    vae = AutoencoderKL.from_pretrained(args.base, subfolder="vae", torch_dtype=weight_dtype)
+    # fp32 on purpose: the SDXL VAE overflows in fp16 and poisons the latents with inf/NaN
+    vae = AutoencoderKL.from_pretrained(args.base, subfolder="vae", torch_dtype=torch.float32)
     unet = UNet2DConditionModel.from_pretrained(args.base, subfolder="unet", torch_dtype=weight_dtype)
     noise_scheduler = DDPMScheduler.from_pretrained(args.base, subfolder="scheduler")
 
@@ -184,6 +185,8 @@ def main():
             print(f"[train] resumed adapter weights from {peft_dir}", flush=True)
 
     params = [p for p in unet.parameters() if p.requires_grad]
+    for p in params:
+        p.data = p.data.to(torch.float32)  # fp32 master weights (autocast handles the rest)
     if args.train_text_encoders:
         te_config = LoraConfig(r=args.rank, lora_alpha=alpha, init_lora_weights="gaussian",
                                target_modules=["q_proj", "k_proj", "v_proj", "out_proj"])
@@ -235,9 +238,12 @@ def main():
             data_iter = iter(dataloader)
             batch = next(data_iter)
 
-        pixel_values = batch["pixel_values"].to(accelerator.device, dtype=weight_dtype)
+        pixel_values = batch["pixel_values"].to(accelerator.device, dtype=torch.float32)
         with torch.no_grad():
             latents = vae.encode(pixel_values).latent_dist.sample() * vae.config.scaling_factor
+            latents = latents.to(weight_dtype)
+        if step == 0 and not torch.isfinite(latents).all():
+            raise RuntimeError("VAE produced non-finite latents — check the image folder for corrupt files.")
         if args.train_text_encoders:
             prompt_embeds, pooled = encode_prompts(
                 batch["captions"], tokenizer, tokenizer_2, text_encoder, text_encoder_2,
@@ -277,11 +283,14 @@ def main():
             else:
                 loss = loss.mean()
 
-            accelerator.backward(loss)
-            if accelerator.sync_gradients:
-                accelerator.clip_grad_norm_(params, 1.0)
-            optimizer.step()
-            lr_scheduler.step()
+            if torch.isfinite(loss):
+                accelerator.backward(loss)
+                if accelerator.sync_gradients:
+                    accelerator.clip_grad_norm_(params, 1.0)
+                optimizer.step()
+                lr_scheduler.step()
+            else:
+                print(f"[train] WARNING: non-finite loss at step {step}, skipping batch", flush=True)
             optimizer.zero_grad(set_to_none=True)
 
         if accelerator.sync_gradients:

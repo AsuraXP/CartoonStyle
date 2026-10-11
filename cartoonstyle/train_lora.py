@@ -11,6 +11,7 @@ Data layout: a folder of images with sidecar .txt captions
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import os
 import time
@@ -136,8 +137,16 @@ def main():
     from peft import LoraConfig, get_peft_model
     from transformers import CLIPTextModel, CLIPTextModelWithProjection, CLIPTokenizer
 
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     accelerator = Accelerator(gradient_accumulation_steps=args.grad_accum, mixed_precision="fp16")
     set_seed(args.seed)
+    if accelerator.is_main_process:
+        try:
+            with open("/proc/meminfo") as f:
+                avail_gb = int([l for l in f if l.startswith("MemAvailable")][0].split()[1]) / 1e6
+            print(f"[train] host RAM available: {avail_gb:.1f} GB", flush=True)
+        except Exception:
+            pass
     weight_dtype = torch.float16
     alpha = args.alpha or args.rank
 
@@ -149,12 +158,15 @@ def main():
 
     tokenizer = CLIPTokenizer.from_pretrained(args.base, subfolder="tokenizer")
     tokenizer_2 = CLIPTokenizer.from_pretrained(args.base, subfolder="tokenizer_2")
-    text_encoder = CLIPTextModel.from_pretrained(args.base, subfolder="text_encoder", torch_dtype=weight_dtype)
+    text_encoder = CLIPTextModel.from_pretrained(args.base, subfolder="text_encoder", torch_dtype=weight_dtype,
+                                                 low_cpu_mem_usage=True)
     text_encoder_2 = CLIPTextModelWithProjection.from_pretrained(
-        args.base, subfolder="text_encoder_2", torch_dtype=weight_dtype)
+        args.base, subfolder="text_encoder_2", torch_dtype=weight_dtype, low_cpu_mem_usage=True)
     # fp32 on purpose: the SDXL VAE overflows in fp16 and poisons the latents with inf/NaN
-    vae = AutoencoderKL.from_pretrained(args.base, subfolder="vae", torch_dtype=torch.float32)
-    unet = UNet2DConditionModel.from_pretrained(args.base, subfolder="unet", torch_dtype=weight_dtype)
+    vae = AutoencoderKL.from_pretrained(args.base, subfolder="vae", torch_dtype=torch.float32,
+                                        low_cpu_mem_usage=True)
+    unet = UNet2DConditionModel.from_pretrained(args.base, subfolder="unet", torch_dtype=weight_dtype,
+                                                low_cpu_mem_usage=True)
     noise_scheduler = DDPMScheduler.from_pretrained(args.base, subfolder="scheduler")
 
     vae.requires_grad_(False)
@@ -207,7 +219,7 @@ def main():
     dataset = CaptionImageDataset(args.data_dir, args.width, args.height, args.trigger, args.max_images)
     if accelerator.is_main_process:
         print(f"[train] dataset: {len(dataset)} images", flush=True)
-    dataloader = DataLoader(dataset, batch_size=args.batch, shuffle=True, num_workers=2,
+    dataloader = DataLoader(dataset, batch_size=args.batch, shuffle=True, num_workers=0, pin_memory=False,
                             drop_last=True, collate_fn=lambda b: {
                                 "pixel_values": torch.stack([x["pixel_values"] for x in b]),
                                 "captions": [x["caption"] for x in b],
@@ -223,6 +235,7 @@ def main():
         text_encoder.to(accelerator.device)
         text_encoder_2.to(accelerator.device)
 
+    gc.collect()
     alphas_cumprod = noise_scheduler.alphas_cumprod.to(accelerator.device)
     add_time_ids = torch.tensor(
         [[args.height, args.width, 0, 0, args.height, args.width]], dtype=weight_dtype

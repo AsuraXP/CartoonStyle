@@ -82,11 +82,11 @@ class CaptionImageDataset(Dataset):
         return {"pixel_values": pixel, "caption": caption}
 
 
-def encode_prompts(captions, tokenizer, tokenizer_2, text_encoder, text_encoder_2):
+def encode_prompts(captions, tokenizer, tokenizer_2, text_encoder, text_encoder_2, device):
     t1 = tokenizer(captions, padding="max_length", max_length=tokenizer.model_max_length,
-                   truncation=True, return_tensors="pt").input_ids
+                   truncation=True, return_tensors="pt").input_ids.to(device)
     t2 = tokenizer_2(captions, padding="max_length", max_length=tokenizer_2.model_max_length,
-                     truncation=True, return_tensors="pt").input_ids
+                     truncation=True, return_tensors="pt").input_ids.to(device)
     out1 = text_encoder(t1, output_hidden_states=True)
     out2 = text_encoder_2(t2, output_hidden_states=True)
     prompt_embeds = torch.cat([out1.hidden_states[-2], out2.hidden_states[-2]], dim=-1)
@@ -238,8 +238,15 @@ def main():
         pixel_values = batch["pixel_values"].to(accelerator.device, dtype=weight_dtype)
         with torch.no_grad():
             latents = vae.encode(pixel_values).latent_dist.sample() * vae.config.scaling_factor
+        if args.train_text_encoders:
             prompt_embeds, pooled = encode_prompts(
-                batch["captions"], tokenizer, tokenizer_2, text_encoder, text_encoder_2)
+                batch["captions"], tokenizer, tokenizer_2, text_encoder, text_encoder_2,
+                accelerator.device)
+        else:
+            with torch.no_grad():
+                prompt_embeds, pooled = encode_prompts(
+                    batch["captions"], tokenizer, tokenizer_2, text_encoder, text_encoder_2,
+                    accelerator.device)
             prompt_embeds = prompt_embeds.to(dtype=weight_dtype)
             pooled = pooled.to(dtype=weight_dtype)
 

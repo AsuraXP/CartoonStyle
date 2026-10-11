@@ -183,6 +183,16 @@ python -m cartoonstyle.upscale --in-dir raw --out-dir hd
 - 1920×1080 is an **upscale** of the native 1344×768 generation. For extra crispness
   set `output.upscale_method: esrgan` and provide weights via `CARTOONSTYLE_ESRGAN`.
 
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `ImportError: Found an incompatible version of torchao` during `train_lora` | `!pip uninstall -y torchao` then re-run. Kaggle ships torchao 0.10.0 and peft raises at LoRA setup just because it's installed (we never use it). The notebook setup cell does this automatically. |
+| CUDA out of memory | add `--batch 1 --lowvram` to `generate`; for training lower `--width/--height` to 768 |
+| `accelerate: command not found` | re-run the setup cell's `pip install -r requirements.txt` |
+| Session killed mid-run | new session → re-run the same cells — generation resumes, training resumes from `--resume checkpoints/step_XXXXXX` |
+| Slow first cell | normal: SDXL base (~7 GB) + Lightning LoRA download once; cache it in a Kaggle Dataset to skip later |
+
 ## Repo layout
 
 ```

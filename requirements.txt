@@ -1,0 +1,11 @@
+# torch / torchvision / numpy come preinstalled on Kaggle — do NOT pin them here.
+diffusers>=0.30.0
+transformers>=4.44.0
+accelerate>=0.33.0
+peft>=0.11.0
+safetensors>=0.4.3
+bitsandbytes>=0.43.0
+huggingface_hub>=0.24.0
+pyyaml>=6.0
+Pillow>=10.0
+tqdm>=4.66

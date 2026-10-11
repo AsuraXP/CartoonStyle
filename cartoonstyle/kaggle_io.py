@@ -1,0 +1,163 @@
+"""Crash-safe output handling: manifests, incremental zips, Kaggle Dataset pushes.
+
+Nothing waits for the run to finish: every image is written the moment it is
+generated, a rolling zip accumulates new files, and (optionally) the output dir
+is pushed to a private Kaggle Dataset on a timer so a killed session never
+loses work.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import threading
+import time
+import zipfile
+
+
+def read_done(manifest_paths: list[str]) -> dict[str, dict]:
+    done: dict[str, dict] = {}
+    for p in manifest_paths:
+        if not p or not os.path.exists(p):
+            continue
+        with open(p, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue  # tolerate a torn last line after a crash
+                if rec.get("key"):
+                    done[rec["key"]] = rec
+    return done
+
+
+def append_manifest(path: str, rec: dict) -> None:
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec) + "\n")
+
+
+def merge_manifests(out_dir: str, shard_files: list[str], merged_name: str = "manifest.jsonl") -> str:
+    done = read_done(shard_files)
+    merged = os.path.join(out_dir, merged_name)
+    with open(merged, "w", encoding="utf-8") as f:
+        for rec in sorted(done.values(), key=lambda r: r.get("index", 0)):
+            f.write(json.dumps(rec) + "\n")
+    return merged
+
+
+def _zip_index_path(out_dir: str) -> str:
+    return os.path.join(out_dir, "snapshots", "zip_index.json")
+
+
+def update_zip(out_dir: str, rel_files: list[str]) -> str | None:
+    """Append newly generated files to snapshots/images.zip (no duplicates)."""
+    new = [f for f in rel_files if os.path.exists(os.path.join(out_dir, f))]
+    if not new:
+        return None
+    snap_dir = os.path.join(out_dir, "snapshots")
+    os.makedirs(snap_dir, exist_ok=True)
+    zpath = os.path.join(snap_dir, "images.zip")
+    idx_path = _zip_index_path(out_dir)
+    seen: set[str] = set()
+    if os.path.exists(idx_path):
+        with open(idx_path, encoding="utf-8") as f:
+            seen = set(json.load(f))
+    todo = [f for f in new if f not in seen]
+    if not todo:
+        return zpath if os.path.exists(zpath) else None
+    with zipfile.ZipFile(zpath, "a", zipfile.ZIP_STORED) as z:
+        for f in todo:
+            z.write(os.path.join(out_dir, f), f)
+    seen.update(todo)
+    with open(idx_path, "w", encoding="utf-8") as f:
+        json.dump(sorted(seen), f)
+    return zpath
+
+
+def list_new_images(out_dir: str) -> list[str]:
+    img_dir = os.path.join(out_dir, "images")
+    if not os.path.isdir(img_dir):
+        return []
+    return sorted(
+        os.path.join("images", n) for n in os.listdir(img_dir) if n.lower().endswith(".png")
+    )
+
+
+def kaggle_push(out_dir: str, message: str = "auto-save") -> bool:
+    """Best-effort create-or-version a Kaggle Dataset from `out_dir`.
+
+    Requires the kaggle CLI (preinstalled + authenticated on Kaggle notebooks).
+    Returns True when the push succeeded.
+    """
+    attempts = (
+        ["kaggle", "datasets", "version", "-p", out_dir, "-m", message],
+        ["kaggle", "datasets", "create", "-p", out_dir, "--private"],
+    )
+    for cmd in attempts:
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+        except Exception:
+            return False
+        if r.returncode == 0:
+            return True
+        print(f"[kaggle] {' '.join(cmd[1:3])} failed: {r.stderr.strip()[:300]}", flush=True)
+    return False
+
+
+class Pusher:
+    """Background thread: zip new images and push to Kaggle on a schedule."""
+
+    def __init__(
+        self,
+        out_dir: str,
+        every_images: int = 50,
+        every_seconds: int = 600,
+        enable_kaggle: bool = True,
+    ):
+        self.out_dir = out_dir
+        self.every_images = max(1, int(every_images))
+        self.every_seconds = max(60, int(every_seconds))
+        self.enable_kaggle = enable_kaggle
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._pushed: set[str] = set()
+        self._last_push = 0.0
+
+    def start(self) -> "Pusher":
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+        return self
+
+    def _flush(self, message: str) -> None:
+        files = list_new_images(self.out_dir)
+        new = [f for f in files if f not in self._pushed]
+        if not new:
+            return
+        update_zip(self.out_dir, new)
+        self._pushed.update(new)
+        self._last_push = time.time()
+        print(f"[pusher] {len(new)} new images -> snapshots/images.zip", flush=True)
+        if self.enable_kaggle:
+            ok = kaggle_push(self.out_dir, message)
+            print(f"[pusher] kaggle dataset push {'ok' if ok else 'skipped/failed'}", flush=True)
+
+    def _loop(self) -> None:
+        while not self._stop.wait(30):
+            files = list_new_images(self.out_dir)
+            new = [f for f in files if f not in self._pushed]
+            due = (
+                len(new) >= self.every_images
+                or (new and time.time() - self._last_push >= self.every_seconds)
+            )
+            if due:
+                self._flush("auto-save")
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=60)
+        self._flush("final-save")

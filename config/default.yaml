@@ -1,0 +1,65 @@
+# CartoonStyle defaults — tuned for Kaggle T4 x2, YouTube 1920x1080 landscape.
+run:
+  name: cartoonstyle
+  seed: 42
+  images: 200
+
+model:
+  # General SDXL base suits a flat Western cartoon / stickman style best.
+  # For anime-flavored art swap in: cagliostrolab/animagine-xl-3.1
+  base: stabilityai/stable-diffusion-xl-base-1.0
+  lightning_repo: ByteDance/SDXL-Lightning
+  lightning_steps: 4      # 2 = fastest drafts, 4 = sweet spot, 8 = max quality
+  lora: null              # path to your trained style LoRA (dir or .safetensors)
+  lora_scale: 0.85
+
+generation:
+  width: 1344             # SDXL 16:9 bucket -> upscaled to 1920x1080
+  height: 768
+  steps: 4                # must match lightning_steps
+  guidance_scale: 0.0     # Lightning is CFG-distilled; keep at 0 for best quality
+  batch: 2                # per GPU; use 1 with --lowvram
+  negative: "text, watermark, logo, signature, blurry, low quality, jpeg artifacts, 3d render, photorealistic, photo, extra limbs, deformed hands"
+
+prompts:
+  file: config/prompts.example.csv   # set to null to use templates below
+  style_prefix: "flat 2d cartoon style, thick black outlines, simple flat colors, cartoon stickman character"
+  templates:
+    subjects:
+      - "a cartoon stickman character"
+      - "two cartoon stickman characters talking"
+      - "a cartoon stickman character looking worried"
+      - "a cartoon stickman character smiling"
+    scenes:
+      - "in a simple bedroom at night, alarm clock on the nightstand"
+      - "standing beside a whiteboard in a classroom"
+      - "sitting at a desk with a laptop in a simple office"
+      - "waiting at a bus stop on a city street"
+      - "cooking in a simple kitchen"
+      - "lying on a couch in a living room, tv glow"
+    shots:
+      - "wide shot"
+      - "medium shot"
+      - "slightly low angle"
+
+output:
+  dir: /kaggle/working/cartoonstyle-out
+  upscale_to: [1920, 1080]
+  upscale_method: lanczos   # set "esrgan" + CARTOONSTYLE_ESRGAN=<weights.pth> for sharper upscale
+  push_every_images: 50
+  push_every_seconds: 600
+  auto_kaggle_push: true    # periodic push to a private Kaggle Dataset (crash insurance)
+  dataset_slug: null        # optional: username/dataset-name to version into
+
+train:
+  data_dir: /kaggle/input/cartoonstyle-refs
+  out_dir: /kaggle/working/cartoonstyle-lora
+  width: 1024
+  height: 1024
+  rank: 16
+  lr: 0.0001
+  steps: 1200
+  batch: 1
+  grad_accum: 4
+  save_every: 250
+  trigger: "ckstyle"

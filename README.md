@@ -86,6 +86,18 @@ the LoRA training images in `lora_refs/` all come down by themselves.
    - `snapshots/images.zip` — rolling zip of everything so far
    - auto-pushed to a **private Kaggle Dataset** every 50 images / 10 min
 
+### Your LoRA is auto-persisted (survives Kaggle clearing everything)
+
+Every checkpoint save **also pushes the LoRA folder to a private Kaggle
+Dataset** (`kaggle datasets create/version` runs from inside the training job).
+`/kaggle/working` may vanish between sessions — the Dataset never does. Next
+session: attach it as input and `--resume /kaggle/input/cartoonstyle-lora/checkpoints/step_XXXXXX`
+(or just `--resume latest` after copying it back into the working dir).
+
+**Not GitHub:** git remotes reject 100 MB+ binaries and would require a secret
+token — Kaggle Datasets are the correct durable store for weights (free,
+private, and mountable as `/kaggle/input`).
+
 ### You will never lose images
 
 - Every image is saved the **moment** it is generated (no end-of-run buffer).

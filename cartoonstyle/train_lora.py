@@ -41,7 +41,7 @@ def parse_args():
     p.add_argument("--trigger", default=None, help="trigger token prepended to every caption")
     p.add_argument("--train-text-encoders", action="store_true")
     p.add_argument("--max-images", type=int, default=None)
-    p.add_argument("--resume", default=None, help="checkpoint dir (peft/ subdir) to resume from")
+    p.add_argument("--resume", default=None, help="checkpoint dir (peft/ subdir) to resume from, or 'latest'")
     p.add_argument("--min-snr-gamma", type=float, default=5.0)
     return p.parse_args()
 
@@ -163,6 +163,18 @@ def save_lora(unet, text_encoder, text_encoder_2, out_dir: str, args) -> None:
         raise RuntimeError(f"could not save LoRA adapter to {out_dir}")
 
 
+def auto_push(out_dir: str) -> None:
+    """Best-effort: persist the LoRA dir to a private Kaggle Dataset after saves."""
+    if not os.path.isdir("/kaggle") or os.environ.get("CARTOONSTYLE_NO_PUSH") == "1":
+        return
+    try:
+        from . import kaggle_io
+        ok = kaggle_io.kaggle_push(out_dir, "train-checkpoint-auto-save")
+        print(f"[save] kaggle dataset push: {'ok' if ok else 'skipped/failed'}", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[save] kaggle push error: {e}", flush=True)
+
+
 def main():
     args = parse_args()
     from accelerate import Accelerator
@@ -221,6 +233,12 @@ def main():
     except Exception:  # noqa: BLE001
         pass
 
+    if args.resume == "latest":
+        import glob
+        cands = sorted(glob.glob(os.path.join(args.out_dir, "checkpoints", "step_*")))
+        args.resume = cands[-1] if cands else None
+        if accelerator.is_main_process:
+            print(f"[train] --resume latest -> {args.resume or 'no checkpoints found, fresh start'}", flush=True)
     if args.resume:
         from peft import set_peft_model_state_dict
         from peft.utils import load_peft_weights
@@ -265,9 +283,28 @@ def main():
         text_encoder, text_encoder_2 = accelerator.prepare(text_encoder, text_encoder_2)
 
     vae.to(accelerator.device)
+
+    # Precompute the (few) caption embeddings ONCE, then free both text
+    # encoders: ~3-4 GB less host RAM + VRAM per process. Big OOM repellent.
+    embed_cache = None
     if not args.train_text_encoders:
         text_encoder.to(accelerator.device)
         text_encoder_2.to(accelerator.device)
+        embed_cache = {}
+        unique_captions = list(dict.fromkeys(c for _, c in dataset.items))
+        with torch.no_grad():
+            for i in range(0, len(unique_captions), 8):
+                chunk = unique_captions[i:i + 8]
+                pe, po = encode_prompts(chunk, tokenizer, tokenizer_2,
+                                        text_encoder, text_encoder_2, accelerator.device)
+                for c, e, o in zip(chunk, pe, po):
+                    embed_cache[c] = (e.cpu(), o.cpu())
+        del text_encoder, text_encoder_2
+        gc.collect()
+        torch.cuda.empty_cache()
+        if accelerator.is_main_process:
+            print(f"[train] cached prompt embeddings for {len(unique_captions)} captions; "
+                  "text encoders freed from memory", flush=True)
 
     gc.collect()
     alphas_cumprod = noise_scheduler.alphas_cumprod.to(accelerator.device)
@@ -291,15 +328,14 @@ def main():
             latents = latents.to(weight_dtype)
         if step == 0 and not torch.isfinite(latents).all():
             raise RuntimeError("VAE produced non-finite latents — check the image folder for corrupt files.")
-        if args.train_text_encoders:
+        if embed_cache is not None:
+            cached = [embed_cache[c] for c in batch["captions"]]
+            prompt_embeds = torch.stack([e for e, _ in cached]).to(accelerator.device, dtype=weight_dtype)
+            pooled = torch.stack([o for _, o in cached]).to(accelerator.device, dtype=weight_dtype)
+        else:
             prompt_embeds, pooled = encode_prompts(
                 batch["captions"], tokenizer, tokenizer_2, text_encoder, text_encoder_2,
                 accelerator.device)
-        else:
-            with torch.no_grad():
-                prompt_embeds, pooled = encode_prompts(
-                    batch["captions"], tokenizer, tokenizer_2, text_encoder, text_encoder_2,
-                    accelerator.device)
             prompt_embeds = prompt_embeds.to(dtype=weight_dtype)
             pooled = pooled.to(dtype=weight_dtype)
 
@@ -351,14 +387,24 @@ def main():
                 accelerator.wait_for_everyone()
                 if accelerator.is_main_process:
                     unwrapped = accelerator.unwrap_model(unet)
-                    save_lora(unwrapped, text_encoder, text_encoder_2,
-                              os.path.join(args.out_dir, "checkpoints", f"step_{step:06d}"), args)
-                    print(f"[train] saved checkpoint at step {step}", flush=True)
+                    ckpt_dir = os.path.join(args.out_dir, "checkpoints", f"step_{step:06d}")
+                    try:
+                        save_lora(unwrapped, text_encoder if args.train_text_encoders else None,
+                                  text_encoder_2 if args.train_text_encoders else None, ckpt_dir, args)
+                        print(f"[train] saved checkpoint at step {step}", flush=True)
+                        auto_push(args.out_dir)
+                    except Exception as e:  # noqa: BLE001
+                        if step == args.steps:
+                            raise
+                        print(f"[train] WARNING: checkpoint save failed at step {step}: {e}", flush=True)
                 accelerator.wait_for_everyone()
 
     if accelerator.is_main_process:
         unwrapped = accelerator.unwrap_model(unet)
-        save_lora(unwrapped, text_encoder, text_encoder_2, os.path.join(args.out_dir, "final"), args)
+        save_lora(unwrapped, text_encoder if args.train_text_encoders else None,
+                  text_encoder_2 if args.train_text_encoders else None,
+                  os.path.join(args.out_dir, "final"), args)
+        auto_push(args.out_dir)
         print(f"[train] done in {(time.time() - t0) / 60:.1f}m -> {os.path.join(args.out_dir, 'final')}", flush=True)
 
 

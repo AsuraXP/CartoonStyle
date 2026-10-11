@@ -3,14 +3,12 @@
 Ready-to-train style/character datasets for CartoonStyle. Each `.jpg` has a
 sidecar `.txt` caption (trigger token `ckstyle` / `ckdoodle` + style + scene).
 
-## flat_cartoon/ — the colored storytime style
+## flat_cartoon/ — the colored storytime style ⭐ primary set
 
 Flat 2D cartoon stickman (round white head, thick black outlines, flat solid
-colors, beige rooms, wooden plank floors). 10 varied scenes covering different
-emotions, poses, props, rooms and outdoors — the variation is what makes the
-LoRA generalize instead of memorizing one frame.
-
-*(Pending, next batch: 11_car_traffic, 12_stage_speech.)*
+colors, beige rooms, wooden plank floors). **20 varied scenes** covering emotions,
+poses, props, rooms, outdoors, vehicles, multi-character shots — the variation is
+what makes the LoRA generalize instead of memorizing one frame.
 
 ## paper_doodle/ — the ink-on-paper style
 

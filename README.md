@@ -63,14 +63,17 @@ Re-train only when the style drifts or the character changes.
 
 ## Kaggle quickstart
 
-1. **This repo must be reachable from Kaggle.** Either make it public on GitHub
-   (notebook will `git clone` it), or zip it and attach the zip as a Kaggle Dataset.
-2. Kaggle → **New Notebook** → Settings:
+**You don't download anything by hand.** The notebook's first cell `git clone`s
+this repo automatically (it's public) — code, configs, storyboard tool and even
+the LoRA training images in `lora_refs/` all come down by themselves.
+
+1. Kaggle → **New Notebook** → Settings:
    - Accelerator: **GPU T4 x2**
-   - Internet: **on**
-3. **Attach datasets** (Add data):
-   - your style references (`cartoonstyle-refs`) — for caption/train
-   - optional: a previous outputs dataset — to `RESUME_FROM`
+   - Internet: **on** (needed for the clone + model download)
+2. Import `notebooks/CartoonStyle-Kaggle.ipynb` (or paste its cells).
+3. **Attach datasets** (Add data), only if you have them:
+   - your own style references — optional, `lora_refs/flat_cartoon` already ships in the repo
+   - a previous outputs dataset — to `RESUME_FROM`
 4. Import `notebooks/CartoonStyle-Kaggle.ipynb` (or paste its cells).
 5. Set `MODE` and run all:
    - `caption` → review/edit the `.txt` files in the dataset (download, edit, re-upload,
@@ -91,6 +94,45 @@ Re-train only when the style drifts or the character changes.
 - A background pusher zips new images and pushes the folder to a private Kaggle
   Dataset on a timer, so even a hard crash keeps the work.
 - Note: `/kaggle/working` holds ~20 GB of committed output — fine for <1k 1080p PNGs.
+
+---
+
+## From narration script → slideshow images
+
+`cartoonstyle/storyboard.py` turns a narration script into per-slide visual
+prompts and an image job list — the "600 images that match what the narrator
+says" workflow:
+
+1. **Write the script with blank lines between slides** (one paragraph = one
+   slide). `[SFX ...]` notes and `NARRATOR:` labels are stripped automatically;
+   a short first line is the title. See `examples/test_narration_script.txt`.
+2. **Write one visual scene prompt per slide** (a CSV of `slide_id,visual_prompt`,
+   like `examples/test_visuals.csv`) — by hand or with any LLM. This is what
+   decides image quality; skip it and the built-in `auto` mode drafts crude
+   keyword prompts (fine for plumbing tests only).
+3. **Build the job list** (runs anywhere, no GPU):
+
+   ```bash
+   python -m cartoonstyle.storyboard --script my_script.txt \
+       --out-dir storyboard_out --images-total 600 \
+       --trigger ckstyle --visuals my_visuals.csv
+   ```
+
+   Output: `prompts.csv` (feed to the generator) + `slides.jsonl` mapping each
+   narration line to its image index range — use it in your editor to place
+   images under the right spoken lines.
+4. **Generate** (on Kaggle, both T4s):
+
+   ```bash
+   python -m cartoonstyle.generate --prompts storyboard_out/prompts.csv \
+       --images 600 --gpus 2 --lora .../final
+   ```
+
+   600 images ≈ **20–30 min** on 2×T4. Each slide gets several seed-variations
+   (`count` column) so you can pick the best take in editing.
+
+In the notebook: `MODE = "storyboard"` (step 3), then `MODE = "generate"` with
+`PROMPTS_CSV` set (step 4).
 
 ---
 

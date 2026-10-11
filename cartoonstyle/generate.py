@@ -30,6 +30,7 @@ def parse_args():
     p.add_argument("--config", default=None)
     p.add_argument("--out", default=None, help="output dir (default: output.dir from config)")
     p.add_argument("--images", type=int, default=None)
+    p.add_argument("--prompts", default=None, help="override prompts.file (e.g. storyboard prompts.csv)")
     p.add_argument("--seed", type=int, default=None)
     p.add_argument("--gpus", type=int, default=None, help="worker processes = GPUs (default: all)")
     p.add_argument("--base", default=None, help="override model.base")
@@ -194,6 +195,7 @@ def main():
     apply_overrides(cfg, {
         "run.images": args.images,
         "run.seed": args.seed,
+        "prompts.file": args.prompts,
         "model.base": args.base,
         "model.lora": args.lora,
         "model.lora_scale": args.lora_scale,

@@ -215,10 +215,10 @@ def main():
     if args.train_text_encoders:
         text_encoder, text_encoder_2 = accelerator.prepare(text_encoder, text_encoder_2)
 
-    vae.to(accelerator.device, dtype=weight_dtype)
+    vae.to(accelerator.device)
     if not args.train_text_encoders:
-        text_encoder.to(accelerator.device, dtype=weight_dtype)
-        text_encoder_2.to(accelerator.device, dtype=weight_dtype)
+        text_encoder.to(accelerator.device)
+        text_encoder_2.to(accelerator.device)
 
     alphas_cumprod = noise_scheduler.alphas_cumprod.to(accelerator.device)
     add_time_ids = torch.tensor(

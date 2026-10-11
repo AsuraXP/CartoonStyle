@@ -6,13 +6,16 @@ sidecar `.txt` caption (trigger token `ckstyle` / `ckdoodle` + style + scene).
 ## flat_cartoon/ — the colored storytime style
 
 Flat 2D cartoon stickman (round white head, thick black outlines, flat solid
-colors, beige rooms, wooden plank floors). 8 varied scenes covering different
-emotions, poses, props and rooms — the variation is what makes the LoRA
-generalize instead of memorizing one frame.
+colors, beige rooms, wooden plank floors). 10 varied scenes covering different
+emotions, poses, props, rooms and outdoors — the variation is what makes the
+LoRA generalize instead of memorizing one frame.
 
-## paper_doodle/ — the ink-on-paper style *(batch 2, in progress)*
+*(Pending, next batch: 11_car_traffic, 12_stage_speech.)*
 
-Black-ink doodle stickman on crumpled paper texture.
+## paper_doodle/ — the ink-on-paper style
+
+Black-ink doodle stickman on crumpled paper texture. 8 scenes: presenting at a
+board, sitting, walking, bar chart, lightbulb idea, shrugging, laptop, jumping.
 
 ## How to use
 

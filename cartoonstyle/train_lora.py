@@ -14,6 +14,7 @@ import argparse
 import gc
 import json
 import os
+import threading
 import time
 
 import numpy as np
@@ -163,16 +164,37 @@ def save_lora(unet, text_encoder, text_encoder_2, out_dir: str, args) -> None:
         raise RuntimeError(f"could not save LoRA adapter to {out_dir}")
 
 
-def auto_push(out_dir: str) -> None:
-    """Best-effort: persist the LoRA dir to a private Kaggle Dataset after saves."""
+_push_lock = threading.Lock()
+
+
+def auto_push(out_dir: str, wait: bool = False) -> None:
+    """Best-effort: persist the LoRA dir to a private Kaggle Dataset after saves.
+
+    Runs in a background thread so training never blocks on uploads (and DDP
+    ranks never sit in a barrier long enough to trip the NCCL timeout).
+    """
     if not os.path.isdir("/kaggle") or os.environ.get("CARTOONSTYLE_NO_PUSH") == "1":
         return
-    try:
-        from . import kaggle_io
-        ok = kaggle_io.kaggle_push(out_dir, "train-checkpoint-auto-save")
-        print(f"[save] kaggle dataset push: {'ok' if ok else 'skipped/failed'}", flush=True)
-    except Exception as e:  # noqa: BLE001
-        print(f"[save] kaggle push error: {e}", flush=True)
+
+    def _run() -> None:
+        try:
+            from . import kaggle_io
+            ok = kaggle_io.kaggle_push(out_dir, "train-checkpoint-auto-save")
+            print(f"[save] kaggle dataset push: {'ok' if ok else 'skipped/failed'}", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"[save] kaggle push error: {e}", flush=True)
+        finally:
+            _push_lock.release()
+
+    if not _push_lock.acquire(blocking=False):
+        print("[save] previous kaggle push still uploading; skipping this one", flush=True)
+        return
+    if wait:
+        print("[save] pushing final LoRA to Kaggle Dataset (this one is worth the wait)...", flush=True)
+        _run()
+    else:
+        print("[save] pushing checkpoint to Kaggle Dataset in the background...", flush=True)
+        threading.Thread(target=_run, daemon=True).start()
 
 
 def _purge_bad_torchao() -> None:
@@ -441,7 +463,7 @@ def main():
         save_lora(unwrapped, text_encoder if args.train_text_encoders else None,
                   text_encoder_2 if args.train_text_encoders else None,
                   os.path.join(args.out_dir, "final"), args)
-        auto_push(args.out_dir)
+        auto_push(args.out_dir, wait=True)
         print(f"[train] done in {(time.time() - t0) / 60:.1f}m -> {os.path.join(args.out_dir, 'final')}", flush=True)
 
 

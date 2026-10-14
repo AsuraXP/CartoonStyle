@@ -96,6 +96,26 @@ def kaggle_push(out_dir: str, message: str = "auto-save") -> bool:
     nested dirs (checkpoints/, final/peft/) are uploaded instead of skipped.
     Returns True when the push succeeded.
     """
+    # Kaggle CLI 2.x refuses to push without a dataset-metadata.json telling it
+    # where the dataset lives. Write one if the user hasn't.
+    meta_path = os.path.join(out_dir, "dataset-metadata.json")
+    if not os.path.exists(meta_path):
+        import json as _json
+
+        slug = os.path.basename(os.path.normpath(out_dir)) or "cartoonstyle-out"
+        meta = {"title": slug, "licenses": [{"name": "Apache-2.0"}]}
+        username = os.environ.get("KAGGLE_USERNAME")
+        if not username:
+            try:
+                with open(os.path.expanduser("~/.kaggle/kaggle.json"), encoding="utf-8") as f:
+                    username = _json.load(f).get("username")
+            except Exception:
+                username = None
+        if username:
+            meta["id"] = f"{username}/{slug}"
+        with open(meta_path, "w", encoding="utf-8") as f:
+            _json.dump(meta, f, indent=2)
+
     try:
         help_txt = subprocess.run(["kaggle", "datasets", "create", "-h"],
                                   capture_output=True, text=True, timeout=60).stdout

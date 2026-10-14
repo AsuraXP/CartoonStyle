@@ -90,21 +90,37 @@ def list_new_images(out_dir: str) -> list[str]:
 def kaggle_push(out_dir: str, message: str = "auto-save") -> bool:
     """Best-effort create-or-version a Kaggle Dataset from `out_dir`.
 
-    Requires the kaggle CLI (preinstalled + authenticated on Kaggle notebooks).
+    Works on both Kaggle CLI generations: 1.x wants `--private`; 2.x removed it
+    (private is the default) and requires `-m` on `datasets version`. Both
+    generations default `--dir-mode` differently - we always pass `zip` so
+    nested dirs (checkpoints/, final/peft/) are uploaded instead of skipped.
     Returns True when the push succeeded.
     """
-    attempts = (
-        ["kaggle", "datasets", "version", "-p", out_dir, "-m", message],
-        ["kaggle", "datasets", "create", "-p", out_dir, "--private"],
-    )
-    for cmd in attempts:
+    try:
+        help_txt = subprocess.run(["kaggle", "datasets", "create", "-h"],
+                                  capture_output=True, text=True, timeout=60).stdout
+    except Exception:
+        help_txt = ""
+
+    common = ["-p", out_dir]
+    if "--dir-mode" in help_txt:
+        common += ["--dir-mode", "zip"]
+
+    create_cmd = ["kaggle", "datasets", "create"] + common
+    if "--private" in help_txt:  # 1.x only; 2.x would reject the flag
+        create_cmd.append("--private")
+    version_cmd = ["kaggle", "datasets", "version"] + common + ["-m", message]
+
+    for cmd in (version_cmd, create_cmd):
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
-        except Exception:
+        except Exception as e:  # noqa: BLE001
+            print(f"[kaggle] {cmd[1]} error: {e}", flush=True)
             return False
         if r.returncode == 0:
             return True
-        print(f"[kaggle] {' '.join(cmd[1:3])} failed: {r.stderr.strip()[:300]}", flush=True)
+        err = (r.stderr or r.stdout or "").strip().replace("\n", " ")[:300]
+        print(f"[kaggle] {cmd[1]} failed: {err}", flush=True)
     return False
 
 

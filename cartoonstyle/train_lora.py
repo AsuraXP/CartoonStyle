@@ -175,8 +175,34 @@ def auto_push(out_dir: str) -> None:
         print(f"[save] kaggle push error: {e}", flush=True)
 
 
+def _purge_bad_torchao() -> None:
+    """peft raises at LoRA setup merely if torchao < 0.16 is installed (we never
+    use torchao). Kaggle's image ships torchao 0.10.0, so purge it ourselves -
+    every session, on every rank - instead of relying on a notebook cell."""
+    try:
+        from importlib.metadata import version as _pkg_version
+
+        v = _pkg_version("torchao")
+    except Exception:
+        return  # not installed -> peft is happy
+    try:
+        from packaging.version import Version
+
+        if Version(v) >= Version("0.16.0"):
+            return
+    except Exception:
+        pass
+    import subprocess
+    import sys
+
+    print(f"[train] uninstalling incompatible torchao {v} (peft refuses to load it)", flush=True)
+    subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", "torchao"],
+                   capture_output=True)
+
+
 def main():
     args = parse_args()
+    _purge_bad_torchao()
     from accelerate import Accelerator
     from accelerate.utils import set_seed
     from diffusers import AutoencoderKL, DDPMScheduler, UNet2DConditionModel
@@ -381,9 +407,15 @@ def main():
             if step % 10 == 0 and accelerator.is_main_process:
                 rate = step / max(time.time() - t0, 1e-6)
                 eta = (args.steps - step) / max(rate, 1e-6) / 60
+                _ram = ""
+                try:
+                    with open("/proc/meminfo") as f:
+                        _ram = f" | RAM {int([l for l in f if l.startswith('MemAvailable')][0].split()[1]) / 1e6:.0f}GB"
+                except Exception:
+                    pass
                 print(f"[train] step {step}/{args.steps} | loss {loss.item():.4f} | "
-                      f"{rate:.2f} it/s | eta {eta:.0f}m", flush=True)
-            if step % args.save_every == 0 or step == args.steps:
+                      f"{rate:.2f} it/s | eta {eta:.0f}m{_ram}", flush=True)
+            if step in (1, 10) or step % args.save_every == 0 or step == args.steps:
                 accelerator.wait_for_everyone()
                 if accelerator.is_main_process:
                     unwrapped = accelerator.unwrap_model(unet)
@@ -397,6 +429,11 @@ def main():
                         if step == args.steps:
                             raise
                         print(f"[train] WARNING: checkpoint save failed at step {step}: {e}", flush=True)
+                    import glob as _glob
+                    import shutil as _shutil
+                    old_ck = sorted(_glob.glob(os.path.join(args.out_dir, "checkpoints", "step_*")))
+                    for stale in old_ck[:-2]:
+                        _shutil.rmtree(stale, ignore_errors=True)
                 accelerator.wait_for_everyone()
 
     if accelerator.is_main_process:

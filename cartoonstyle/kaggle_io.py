@@ -111,6 +111,16 @@ def kaggle_push(out_dir: str, message: str = "auto-save") -> bool:
                     username = _json.load(f).get("username")
             except Exception:
                 username = None
+        if not username:  # token-auth VMs keep config in ~/.config/kaggle
+            try:
+                r = subprocess.run(["kaggle", "config", "view"], capture_output=True, text=True, timeout=30)
+                for line in (r.stdout or "").splitlines():
+                    if "username" in line.lower() and ":" in line:
+                        username = line.split(":", 1)[1].strip() or None
+                        if username:
+                            break
+            except Exception:
+                pass
         if username:
             meta["id"] = f"{username}/{slug}"
         with open(meta_path, "w", encoding="utf-8") as f:

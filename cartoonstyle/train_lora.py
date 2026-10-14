@@ -291,7 +291,13 @@ def main():
         from peft import set_peft_model_state_dict
         from peft.utils import load_peft_weights
 
-        peft_dir = args.resume if os.path.isdir(args.resume) else os.path.join(args.resume, "peft")
+        # checkpoints keep the adapter in a peft/ subdir; tolerate either layout
+        if os.path.exists(os.path.join(args.resume, "peft", "adapter_config.json")):
+            peft_dir = os.path.join(args.resume, "peft")
+        elif os.path.exists(os.path.join(args.resume, "adapter_config.json")):
+            peft_dir = args.resume
+        else:
+            peft_dir = args.resume if os.path.isdir(args.resume) else os.path.join(args.resume, "peft")
         set_peft_model_state_dict(unet, load_peft_weights(peft_dir))
         if accelerator.is_main_process:
             print(f"[train] resumed adapter weights from {peft_dir}", flush=True)

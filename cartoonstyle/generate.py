@@ -124,9 +124,15 @@ def build_pipeline(cfg: dict, lowvram: bool = False):
 
     pipe.scheduler = EulerDiscreteScheduler.from_config(pipe.scheduler.config, timestep_spacing="trailing")
     pipe = pipe.to("cuda")
-    pipe.enable_vae_slicing()
+    try:
+        pipe.enable_vae_slicing()
+    except AttributeError:  # diffusers 0.41+: moved to the VAE itself
+        pipe.vae.enable_slicing()
     if lowvram:
-        pipe.enable_attention_slicing("auto")
+        try:
+            pipe.enable_attention_slicing("auto")
+        except AttributeError:
+            pass
     return pipe
 
 

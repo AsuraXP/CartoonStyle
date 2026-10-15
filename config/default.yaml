@@ -11,7 +11,7 @@ model:
   lightning_repo: ByteDance/SDXL-Lightning
   lightning_steps: 8      # 2 = fastest drafts, 4 = sweet spot, 8 = max quality
   lora: null              # path to your trained style LoRA (dir or .safetensors)
-  lora_scale: 1.2
+  lora_scale: 1.3
 
 generation:
   width: 1344             # SDXL 16:9 bucket -> upscaled to 1920x1080
@@ -23,7 +23,7 @@ generation:
 
 prompts:
   file: config/prompts.example.csv   # set to null to use templates below
-  style_prefix: "flat 2d cartoon storybook illustration, vibrant bold saturated colors, strong flat color fills, crisp thick black outlines, simple shapes, no gray no muted tones, cartoon stickman character"
+  style_prefix: ""   # rows carry the full training-exact format (trigger + spec + visual)
   templates:
     subjects:
       - "a cartoon stickman character"

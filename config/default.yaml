@@ -9,21 +9,21 @@ model:
   # For anime-flavored art swap in: cagliostrolab/animagine-xl-3.1
   base: stabilityai/stable-diffusion-xl-base-1.0
   lightning_repo: ByteDance/SDXL-Lightning
-  lightning_steps: 4      # 2 = fastest drafts, 4 = sweet spot, 8 = max quality
+  lightning_steps: 8      # 2 = fastest drafts, 4 = sweet spot, 8 = max quality
   lora: null              # path to your trained style LoRA (dir or .safetensors)
-  lora_scale: 0.85
+  lora_scale: 1.2
 
 generation:
   width: 1344             # SDXL 16:9 bucket -> upscaled to 1920x1080
   height: 768
-  steps: 4                # must match lightning_steps
-  guidance_scale: 0.0     # Lightning is CFG-distilled; keep at 0 for best quality
+  steps: 8                # must match lightning_steps (8 = max quality)
+  guidance_scale: 2.0     # mild CFG so prompt color language actually lands (test, dial down if harsh)
   batch: 2                # per GPU; use 1 with --lowvram
-  negative: "text, watermark, logo, signature, blurry, low quality, jpeg artifacts, 3d render, photorealistic, photo, extra limbs, deformed hands"
+  negative: "text, watermark, logo, signature, blurry, low quality, jpeg artifacts, 3d render, photorealistic, photo, extra limbs, deformed hands, grayscale, monochrome, black and white, desaturated, muted colors, washed out, soft watercolor, pencil sketch, pastel wash"
 
 prompts:
   file: config/prompts.example.csv   # set to null to use templates below
-  style_prefix: "flat 2d cartoon style, thick black outlines, simple flat colors, cartoon stickman character"
+  style_prefix: "flat 2d cartoon storybook illustration, vibrant bold saturated colors, strong flat color fills, crisp thick black outlines, simple shapes, no gray no muted tones, cartoon stickman character"
   templates:
     subjects:
       - "a cartoon stickman character"

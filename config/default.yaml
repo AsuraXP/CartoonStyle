@@ -5,19 +5,20 @@ run:
   images: 200
 
 model:
-  # General SDXL base suits a flat Western cartoon / stickman style best.
-  # For anime-flavored art swap in: cagliostrolab/animagine-xl-3.1
-  base: stabilityai/stable-diffusion-xl-base-1.0
+  # NoobAI-XL 1.1 (SDXL-arch, epsilon): 2026's standard for recognizable figures,
+  # character consistency and prompt adherence. LoRAs must be trained on THIS base.
+  base: Laxhar/noobai-XL-1.1
   lightning_repo: ByteDance/SDXL-Lightning
-  lightning_steps: 8      # 2 = fastest drafts, 4 = sweet spot, 8 = max quality
+  lightning_steps: null   # null = native sampling (recommended for NoobAI); 4/8 to try speed distills
   lora: null              # path to your trained style LoRA (dir or .safetensors)
   lora_scale: 1.3
 
 generation:
+  scheduler: euler_a      # NoobAI community default
   width: 1344             # SDXL 16:9 bucket -> upscaled to 1920x1080
   height: 768
-  steps: 8                # must match lightning_steps (8 = max quality)
-  guidance_scale: 2.0     # mild CFG so prompt color language actually lands (test, dial down if harsh)
+  steps: 24               # native sampling depth (ignored when lightning_steps set)
+  guidance_scale: 5.0     # NoobAI wants real CFG (community range 3-6)
   batch: 2                # per GPU; use 1 with --lowvram
   negative: "text, watermark, logo, signature, blurry, low quality, jpeg artifacts, 3d render, photorealistic, photo, extra limbs, deformed hands, grayscale, monochrome, black and white, desaturated, muted colors, washed out, soft watercolor, pencil sketch, pastel wash"
 

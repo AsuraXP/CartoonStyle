@@ -28,7 +28,7 @@ def parse_args():
     p = argparse.ArgumentParser(description="CartoonStyle SDXL LoRA trainer")
     p.add_argument("--data-dir", required=True)
     p.add_argument("--out-dir", default="/kaggle/working/cartoonstyle-lora")
-    p.add_argument("--base", default="stabilityai/stable-diffusion-xl-base-1.0")
+    p.add_argument("--base", default="Laxhar/noobai-XL-1.1")
     p.add_argument("--width", type=int, default=1024)
     p.add_argument("--height", type=int, default=1024)
     p.add_argument("--rank", type=int, default=16)

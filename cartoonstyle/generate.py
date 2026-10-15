@@ -85,7 +85,7 @@ def load_style_lora(pipe, style_lora: str, scale: float) -> str:
 
 def build_pipeline(cfg: dict, lowvram: bool = False):
     import torch
-    from diffusers import EulerDiscreteScheduler, StableDiffusionXLPipeline
+    from diffusers import EulerAncestralDiscreteScheduler, EulerDiscreteScheduler, StableDiffusionXLPipeline
     from huggingface_hub import hf_hub_download
 
     base = cfg["model"]["base"]
@@ -95,34 +95,44 @@ def build_pipeline(cfg: dict, lowvram: bool = False):
     except Exception:
         pipe = StableDiffusionXLPipeline.from_pretrained(base, torch_dtype=torch.float16)
 
-    n = int(cfg["model"].get("lightning_steps", 4))
-    weight_name = f"sdxl_lightning_{n}step_lora.safetensors"
-    lightning_path = hf_hub_download(cfg["model"].get("lightning_repo", "ByteDance/SDXL-Lightning"), weight_name)
-    print(f"[worker] applying SDXL-Lightning {n}-step LoRA", flush=True)
-    pipe.load_lora_weights(lightning_path, adapter_name="lightning")
+    n = int(cfg["model"].get("lightning_steps") or 0)
+    have_lightning = n > 0
+    if have_lightning:
+        weight_name = f"sdxl_lightning_{n}step_lora.safetensors"
+        lightning_path = hf_hub_download(cfg["model"].get("lightning_repo", "ByteDance/SDXL-Lightning"), weight_name)
+        print(f"[worker] applying SDXL-Lightning {n}-step LoRA", flush=True)
+        pipe.load_lora_weights(lightning_path, adapter_name="lightning")
+    else:
+        print("[worker] native sampling (no Lightning distill)", flush=True)
 
     style_lora = cfg["model"].get("lora")
     style_scale = float(cfg["model"].get("lora_scale", 0.85))
     fused = False
     if style_lora:
-        try:
-            # ByteDance recipe: fuse lightning into base first, then hang the style LoRA on top.
-            pipe.fuse_lora(lora_scale=1.0)
-            fused = True
-        except Exception as e:  # noqa: BLE001
-            print(f"[worker] fuse_lora failed ({e}); using dual adapters", flush=True)
+        if have_lightning:
+            try:
+                # ByteDance recipe: fuse lightning into base first, then hang the style LoRA on top.
+                pipe.fuse_lora(lora_scale=1.0)
+                fused = True
+            except Exception as e:  # noqa: BLE001
+                print(f"[worker] fuse_lora failed ({e}); using dual adapters", flush=True)
         fmt = load_style_lora(pipe, style_lora, style_scale)
-        if fmt == "std" and not fused:
+        if fmt == "std" and have_lightning and not fused:
             pipe.set_adapters(["lightning", "style"], adapter_weights=[1.0, style_scale])
         print(f"[worker] style LoRA loaded ({fmt}): {style_lora} @ {style_scale}", flush=True)
-    else:
-        if not fused:
-            try:
-                pipe.fuse_lora(lora_scale=1.0)
-            except Exception:  # noqa: BLE001
-                pass
+    elif have_lightning:
+        try:
+            pipe.fuse_lora(lora_scale=1.0)
+        except Exception:  # noqa: BLE001
+            pass
 
-    pipe.scheduler = EulerDiscreteScheduler.from_config(pipe.scheduler.config, timestep_spacing="trailing")
+    sched = (cfg["generation"].get("scheduler") or "euler").lower()
+    if sched in ("euler_a", "euler_ancestral"):
+        pipe.scheduler = EulerAncestralDiscreteScheduler.from_config(pipe.scheduler.config)
+    elif have_lightning:
+        pipe.scheduler = EulerDiscreteScheduler.from_config(pipe.scheduler.config, timestep_spacing="trailing")
+    else:
+        pipe.scheduler = EulerDiscreteScheduler.from_config(pipe.scheduler.config)
     pipe = pipe.to("cuda")
     try:
         pipe.enable_vae_slicing()
@@ -143,6 +153,9 @@ def run_worker(cfg: dict, out_dir: str, shard_id: int, num_shards: int, lowvram:
     out_cfg = cfg["output"]
     width, height = int(gen_cfg["width"]), int(gen_cfg["height"])
     steps = int(gen_cfg["steps"])
+    ln = int(cfg["model"].get("lightning_steps") or 0)
+    if ln > 0:
+        steps = ln  # distill LoRAs are step-count-specific
     guidance = float(gen_cfg.get("guidance_scale", 0.0))
     batch = max(1, int(gen_cfg.get("batch", 2)))
     negative_default = gen_cfg.get("negative") or ""

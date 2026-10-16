@@ -121,7 +121,7 @@ def main():
     p.add_argument("--slides", type=int, default=None,
                    help="target slide count (only used for unstructured wall-of-text scripts)")
     p.add_argument("--trigger", default="ckstyle", help="LoRA trigger token")
-    p.add_argument("--style-prefix", default="flat 2d cartoon style, flat solid colors, vibrant bold saturated colors, thick black outlines, stickman character with round white head, two small black oval eyes, thin eyebrows, small open oval mouth, no nose",
+    p.add_argument("--style-prefix", default="flat 2d cartoon style, flat solid vibrant colors, thick black outlines, white round head, two small black oval eyes, open mouth, no nose, bright even light, no shadows",
                    help="optional style words (usually leave empty: the generator's "
                         "config supplies style_prefix automatically)")
     p.add_argument("--visuals", default=None,

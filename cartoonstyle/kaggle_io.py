@@ -16,6 +16,29 @@ import time
 import zipfile
 
 
+def purge_bad_torchao() -> None:
+    """peft raises at LoRA load merely if torchao < 0.16 is installed (we never
+    use torchao). Kaggle's image ships 0.10.0 in EVERY session - purge it."""
+    try:
+        from importlib.metadata import version as _pkg_version
+
+        v = _pkg_version("torchao")
+    except Exception:
+        return
+    try:
+        from packaging.version import Version
+
+        if Version(v) >= Version("0.16.0"):
+            return
+    except Exception:
+        pass
+    import subprocess
+    import sys
+
+    print(f"[main] uninstalling incompatible torchao {v}", flush=True)
+    subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", "torchao"], capture_output=True)
+
+
 def read_done(manifest_paths: list[str]) -> dict[str, dict]:
     done: dict[str, dict] = {}
     for p in manifest_paths:

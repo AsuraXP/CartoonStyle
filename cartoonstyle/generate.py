@@ -237,6 +237,7 @@ def run_worker(cfg: dict, out_dir: str, shard_id: int, num_shards: int, lowvram:
 
 
 def main():
+    kaggle_io.purge_bad_torchao()
     args = parse_args()
     cfg = load_config(args.config)
     apply_overrides(cfg, {

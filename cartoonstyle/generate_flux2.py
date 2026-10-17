@@ -163,6 +163,7 @@ def run_worker(args: argparse.Namespace) -> None:
                 gc.collect(); torch.cuda.empty_cache()
         if pipe is None:
             raise
+        args.offload = alt  # report the mode we actually run
     print(f"[gpu {k}] flux2 klein ready ({args.offload} offload)", flush=True)
 
     manifest = os.path.join(args.out, f"manifest.shard{k}.jsonl")

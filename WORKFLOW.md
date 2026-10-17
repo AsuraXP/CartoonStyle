@@ -73,6 +73,7 @@ anchors) — you only describe the SCENE.
 Dry run first — 12 images, and the log prints seconds/image:
 
 ```python
+!test -d /kaggle/working/CartoonStyle || git clone --depth 1 -b arena/22c9cd35-cartoonstyle https://github.com/AsuraXP/CartoonStyle.git
 %cd /kaggle/working/CartoonStyle
 !git pull
 !python -m cartoonstyle.generate_flux2 \
@@ -80,6 +81,9 @@ Dry run first — 12 images, and the log prints seconds/image:
     --images 12 --gpus 2 \
     --out /kaggle/working/dryrun12
 ```
+
+ALWAYS start sessions with the clone-if-missing line: Kaggle hands out a
+brand-new empty /kaggle/working whenever the session is recycled.
 
 Full run (600 = 18 beats x 33 variants; use 1000 if timing < 20s/image):
 

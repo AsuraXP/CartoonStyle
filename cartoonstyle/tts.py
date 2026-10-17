@@ -1,17 +1,18 @@
 """Narration TTS - ONE continuous take, word timestamps, image-moment sync.
 
 The narrator reads the whole script as a single take: perfect prosody, no
-gaps between beats (concatenated per-beat files would click and pause).
-Words are still timestamped individually - that is the sync source images
-flip on.
+gaps between beats. Words are timestamped individually - that is the sync
+source images flip on.
 
-Sentences starting with "sfx:" are production cues, not speech: they are
-removed from the narration and kept as short lead-in images.
+Matching rule: moments are matched SEQUENTIALLY against the spoken word
+stream, with numerals expanded the way TTS says them ("40,000" -> "forty
+thousand"). Anything that cannot be matched is REPORTED, never silently
+misplaced.
 
 Outputs (in --out-dir):
   narration.mp3            the single take
   audio/beatNN.mp3         per-beat slices (easy review)
-  beats_with_timing.json   beat spans inside the narration
+  beats_with_timing.json   beat spans (gapless cover of [0, total])
   moments_timing.json      every image moment, gapless tiling of the audio
 """
 from __future__ import annotations
@@ -36,15 +37,72 @@ def audio_duration(path: str) -> float:
     return float(out.stdout.strip())
 
 
+_ONES = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+         "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+         "seventeen", "eighteen", "nineteen"]
+_TENS = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"]
+
+
+def num2words_en(n: int) -> str:
+    if n < 20:
+        return _ONES[n]
+    if n < 100:
+        return _TENS[n // 10] + (" " + _ONES[n % 10] if n % 10 else "")
+    if n < 1000:
+        return _ONES[n // 100] + " hundred" + (" " + num2words_en(n % 100) if n % 100 else "")
+    for i, suf in ((1_000_000_000, "billion"), (1_000_000, "million"), (1000, "thousand")):
+        if n >= i:
+            return num2words_en(n // i) + " " + suf + ((" " + num2words_en(n % i)) if n % i else "")
+    return str(n)
+
+
 def norm_words(text: str) -> list[str]:
+    """Tokens for matching: numerals expanded the way TTS speaks them."""
+    def repl(m: re.Match) -> str:
+        return num2words_en(int(m.group(0).replace(",", "")))
+    text = re.sub(r"\d[\d,]*", repl, text)
     return re.findall(r"[a-z0-9]+", text.lower())
 
 
-def find_subseq(needle: list[str], hay: list[str]) -> int | None:
+def norm_variants(text: str) -> list[list[str]]:
+    """Token variants to try: quantity-style first, then year-style (1840 ->
+    'eighteen forty'), since TTS pronunciation depends on context."""
+    v1 = norm_words(text)
+    out = [v1]
+
+    def year_repl(m: re.Match) -> str:
+        n = int(m.group(0).replace(",", ""))
+        if 1000 <= n <= 1999:
+            hi, lo = n // 100, n % 100
+            if lo == 0:
+                return num2words_en(hi) + " hundred"
+            if lo < 10:
+                return num2words_en(hi) + " oh " + _ONES[lo]
+            return num2words_en(hi) + " " + num2words_en(lo)
+        return num2words_en(n)
+
+    t2 = re.sub(r"\d[\d,]*", year_repl, text)
+    v2 = re.findall(r"[a-z0-9]+", t2.lower())
+    if v2 != v1:
+        out.append(v2)
+    return out
+
+
+def match_first(needles: list[list[str]], hay: list[str], start: int = 0) -> tuple[int, int] | None:
+    """(index, length) of the first variant found at/after start."""
+    best = None
+    for nd in needles:
+        idx = find_subseq(nd, hay, start)
+        if idx is not None and (best is None or idx < best[0]):
+            best = (idx, len(nd))
+    return best
+
+
+def find_subseq(needle: list[str], hay: list[str], start: int = 0) -> int | None:
     n = len(needle)
     if n == 0 or n > len(hay):
         return None
-    for i in range(len(hay) - n + 1):
+    for i in range(start, len(hay) - n + 1):
         if hay[i:i + n] == needle:
             return i
     return None
@@ -80,6 +138,18 @@ async def synth_one_take(text: str, voice: str, rate: str, dest: Path) -> list[d
     return words
 
 
+def stream_tokens(words: list[dict]) -> tuple[list[str], list[float]]:
+    """Word-stream tokens + per-token times (always aligned with each other)."""
+    toks: list[str] = []
+    ts: list[float] = []
+    for w in words:
+        ws = re.findall(r"[a-z0-9]+", w["w"].lower())
+        for tok in ws:
+            toks.append(tok)
+            ts.append(w["t"])
+    return toks, ts
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="one-take narration TTS with word timings")
     p.add_argument("--beats", required=True, help="beats.jsonl from scriptwriter package")
@@ -102,7 +172,6 @@ def main() -> None:
         words = asyncio.run(synth_one_take(full_text, args.voice, args.rate, narr))
         print(f"[tts] narration.mp3 written ({len(words)} words tracked)", flush=True)
     else:
-        # reuse cached take: re-track is not possible offline; timings already saved
         prev = out_dir / "beats_with_timing.json"
         if prev.exists():
             old = json.loads(prev.read_text(encoding="utf-8"))
@@ -112,25 +181,38 @@ def main() -> None:
     total = audio_duration(str(narr))
 
     # ---- map every beat onto the spoken word stream ------------------------
-    sp_tokens = norm_words(" ".join(w["w"] for w in words))
-    sp_times: list[float] = []
-    for w in words:
-        sp_times.extend([w["t"]] * max(1, len(norm_words(w["w"]))))
+    sp_tokens, sp_times = stream_tokens(words)
     sp_times.append(total)
 
     timed = []
     for i, b in enumerate(items):
         beat = int(b["beat"])
-        toks = norm_words(spoken[beat])
-        idx = find_subseq(toks, sp_tokens)
-        if idx is not None and toks:
+        hit = match_first(norm_variants(spoken[beat]), sp_tokens)
+        if hit is not None:
+            idx, nlen = hit
             start = sp_times[idx]
-            end = sp_times[min(idx + len(toks), len(sp_times) - 1)]
+            end = sp_times[min(idx + nlen, len(sp_times) - 1)]
         else:
             frac = i / max(1, len(items))
             start, end = total * frac, total * (i + 1) / max(1, len(items))
-        timed.append({**b, "spoken": spoken[beat], "start": round(start, 2), "sec": round(end - start, 2),
+            print(f"[tts] WARNING: beat {beat} text not found in word stream (numerals?) - proportional span", flush=True)
+        timed.append({**b, "spoken": spoken[beat], "start": start, "sec": end - start,
                       "words": [w for w in words if start <= w["t"] < end]})
+
+    # force a gapless cover of [0, total]: images stream then matches audio 1:1
+    for i in range(len(timed)):
+        if i == 0:
+            timed[i]["start"] = 0.0
+        else:
+            timed[i]["start"] = max(timed[i]["start"], timed[i - 1]["start"] + 0.2)
+    for i in range(len(timed)):
+        end = timed[i + 1]["start"] if i + 1 < len(timed) else total
+        timed[i]["sec"] = end - timed[i]["start"]
+        timed[i]["words"] = [w for w in words if timed[i]["start"] <= w["t"] < end]
+
+    for b in timed:
+        b["start"] = round(b["start"], 3)
+        b["sec"] = round(b["sec"], 3)
 
     (out_dir / "beats_with_timing.json").write_text(json.dumps(timed, indent=1), encoding="utf-8")
     print(f"[tts] total narration: {int(total // 60)}:{int(total % 60):02d} -> beats_with_timing.json", flush=True)
@@ -144,7 +226,7 @@ def main() -> None:
                             "-ss", f"{b['start']:.2f}", "-t", f"{b['sec']:.2f}",
                             "-c:a", "libmp3lame", "-q:a", "4", str(dest)], check=True)
 
-    # ---- moments -> gapless tiling of the audio ----------------------------
+    # ---- moments -> gapless tiling, SEQUENTIAL word-locked -----------------
     if args.visuals:
         import csv as _csv
 
@@ -154,36 +236,35 @@ def main() -> None:
             groups.setdefault(int(r["slide_id"]), []).append(r)
 
         moments = []
+        missed = 0
         for b in timed:
             beat = int(b["beat"])
             ms = groups.get(beat, [])
             if not ms:
                 continue
-            # tokens + times straight from the word stream (always aligned)
-            toks: list[str] = []
-            ts: list[float] = []
-            for w in b["words"]:
-                ws = norm_words(w["w"])
-                if not ws:
-                    continue
-                for tok in ws:
-                    toks.append(tok)
-                    ts.append(w["t"])
+            toks, ts = stream_tokens(b["words"])
+            toks_raw = [re.findall(r"[a-z0-9]+", w["w"].lower()) for w in b["words"]]
+            ts_raw = [w["t"] for w in b["words"]]
             desired: list[float] = []
+            pos = 0
             lead = 0.0
             for m in ms:
-                idx = find_subseq(norm_words(m["moment_text"]), toks)
-                if idx is not None:
+                hit = match_first(norm_variants(m["moment_text"]), toks, pos)
+                if hit is not None:
+                    idx, nlen = hit
                     desired.append(ts[idx])
-                else:  # sfx cue / unmatched -> short lead-in slot
+                    pos = idx + nlen
+                else:
+                    missed += 1
+                    print(f"[tts] WARNING: moment beat{int(m['slide_id']):02d}m{int(m.get('moment') or 0):02d} "
+                          f"words not in speech: {m['moment_text']!r} - lead-in slot", flush=True)
                     desired.append(b["start"] + lead)
                     lead += 1.2
             order = sorted(range(len(ms)), key=lambda j: (desired[j], j))
-            # gapless tiling: each segment ends exactly where the next begins
             tiled = []
             run = b["start"]
-            for pos, j in enumerate(order):
-                nxt = desired[order[pos + 1]] if pos + 1 < len(order) else b["start"] + b["sec"]
+            for pos2, j in enumerate(order):
+                nxt = desired[order[pos2 + 1]] if pos2 + 1 < len(order) else b["start"] + b["sec"]
                 if nxt <= run:
                     nxt = run + 0.4
                 tiled.append((j, run, nxt - run))
@@ -192,10 +273,12 @@ def main() -> None:
                 sid = str(ms[j]["slide_id"]).zfill(2)
                 mom = str(ms[j].get("moment") or j + 1).zfill(2)
                 moments.append({"key": f"beat{sid}m{mom}", "beat": beat,
-                                "start": round(st, 2), "sec": round(sec, 2),
+                                "start": round(st, 3), "sec": round(sec, 3),
                                 "text": ms[j]["moment_text"]})
         (out_dir / "moments_timing.json").write_text(json.dumps(moments, indent=1), encoding="utf-8")
-        print(f"[tts] {len(moments)} image moments locked to spoken words -> moments_timing.json", flush=True)
+        status = "OK" if missed == 0 else f"{missed} MISSED - CHECK WARNINGS ABOVE"
+        print(f"[tts] {len(moments)} image moments locked to spoken words -> moments_timing.json [{status}]",
+              flush=True)
 
 
 if __name__ == "__main__":

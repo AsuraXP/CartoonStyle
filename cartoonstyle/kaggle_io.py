@@ -225,6 +225,10 @@ class Pusher:
             if due:
                 self._flush("auto-save")
 
+    def join(self, timeout: float | None = None) -> None:
+        if self._thread is not None:
+            self._thread.join(timeout)
+
     def stop(self) -> None:
         self._stop.set()
         if self._thread:

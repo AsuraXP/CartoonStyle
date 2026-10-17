@@ -139,7 +139,7 @@ def main() -> None:
     p = argparse.ArgumentParser(description="per-beat narration TTS")
     p.add_argument("--beats", required=True, help="beats.jsonl from scriptwriter package")
     p.add_argument("--out-dir", required=True)
-    p.add_argument("--voice", default="en-US-ChristopherNeural")
+    p.add_argument("--voice", default="en-US-AndrewNeural")  # user-picked narrator
     p.add_argument("--rate", default="+0%", help='speaking pace, e.g. "+5%"')
     p.add_argument("--backend", choices=["edge"], default="edge")
     p.add_argument("--force", action="store_true", help="re-synthesize existing files")

@@ -64,19 +64,21 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def load_rows(path: str) -> list[str]:
+def load_rows(path: str) -> list[tuple[str, str]]:
+    """Returns (slide_id, full_prompt) per row - slide_id = narration beat number."""
     import csv
 
     with open(path, newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
     out = []
-    for r in rows:
+    for i, r in enumerate(rows, 1):
+        sid = str(r.get("slide_id") or i).strip()
         if r.get("prompt"):
-            out.append(r["prompt"].strip())
-        elif r.get("visual_prompt"):
-            out.append(build_prompt(r["visual_prompt"]))
+            out.append((sid, r["prompt"].strip()))
+        elif r.get("visual_prompt") and r["visual_prompt"].strip():
+            out.append((sid, build_prompt(r["visual_prompt"])))
         else:
-            raise SystemExit(f"no prompt/visual_prompt column in {path}")
+            raise SystemExit(f"row {i}: no prompt/visual_prompt text in {path}")
     return out
 
 
@@ -91,7 +93,15 @@ def run_worker(args: argparse.Namespace) -> None:
     os.makedirs(os.path.join(args.out, "images"), exist_ok=True)
     prompts = load_rows(args.prompts)
     k, n = (int(x) for x in args.shard.split("/"))
-    jobs = [(i, prompts[i % len(prompts)], args.seed + i) for i in range(args.images)][k::n]
+    n_rows = len(prompts)
+    jobs = []
+    for i in range(args.images):
+        sid, prompt = prompts[i % n_rows]
+        variant = i // n_rows
+        seed = args.seed + i
+        key = f"beat{sid.zfill(2)}_v{variant:02d}_s{seed:08x}"
+        jobs.append((key, prompt, seed))
+    jobs = jobs[k::n]
     print(f"[gpu {k}] {len(jobs)} jobs of {args.images} total", flush=True)
 
     from diffusers import Flux2KleinPipeline
@@ -127,8 +137,7 @@ def run_worker(args: argparse.Namespace) -> None:
     if not args.no_push:
         pusher = kaggle_io.Pusher(args.out, every_images=25, every_seconds=600).start()
 
-    for i, prompt, seed in jobs:
-        key = f"{i:04d}_s{seed:08x}"
+    for key, prompt, seed in jobs:
         rel = f"images/{key}.png"
         if key in done:
             continue

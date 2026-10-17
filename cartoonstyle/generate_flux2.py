@@ -57,7 +57,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--width", type=int, default=1344)
     p.add_argument("--height", type=int, default=768)
     p.add_argument("--refs", default=",".join(DEFAULT_REFS))
-    p.add_argument("--offload", choices=["model", "sequential"], default="model")
+    p.add_argument("--offload", choices=["none", "model", "sequential"], default="model",
+                   help="none = full model on GPU (RAM-light, needs ~13GB VRAM)")
     p.add_argument("--no-push", action="store_true")
     p.add_argument("--resume-from", default="")
     p.add_argument("--shard", default="", help="internal: k/N worker split")
@@ -122,11 +123,33 @@ def run_worker(args: argparse.Namespace) -> None:
         )
         if offload == "sequential":
             pipe.enable_sequential_cpu_offload()
-        else:
+        elif offload == "model":
             pipe.enable_model_cpu_offload()
+        else:
+            pipe.to("cuda")  # weights stay in VRAM -> host RAM stays free for the other worker
         return pipe
 
-    pipe = build(args.offload)
+    # stagger loads so two workers never eat host RAM / bandwidth at once
+    delay = k * 45
+    if delay:
+        print(f"[gpu {k}] staggered start: waiting {delay}s", flush=True)
+        time.sleep(delay)
+    try:
+        pipe = build(args.offload)
+    except torch.cuda.OutOfMemoryError:
+        print(f"[gpu {k}] offload={args.offload} does not fit -> falling back", flush=True)
+        gc.collect(); torch.cuda.empty_cache()
+        order = {"none": ["model", "sequential"], "model": ["sequential"], "sequential": []}
+        pipe = None
+        for alt in order[args.offload]:
+            try:
+                pipe = build(alt)
+                print(f"[gpu {k}] running with offload={alt}", flush=True)
+                break
+            except torch.cuda.OutOfMemoryError:
+                gc.collect(); torch.cuda.empty_cache()
+        if pipe is None:
+            raise
     print(f"[gpu {k}] flux2 klein ready ({args.offload} offload)", flush=True)
 
     manifest = os.path.join(args.out, f"manifest.shard{k}.jsonl")

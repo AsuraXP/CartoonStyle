@@ -159,17 +159,23 @@ def main() -> None:
             ms = groups.get(beat, [])
             if not ms:
                 continue
-            b_spoken = norm_words(b["spoken"])
-            b_words = b["words"]
-            sp_toks = norm_words(" ".join(w["w"] for w in b_words))
-            sp_ts = [w["t"] for w in b_words for _ in max(1, len(norm_words(w["w"])))]
+            # tokens + times straight from the word stream (always aligned)
+            toks: list[str] = []
+            ts: list[float] = []
+            for w in b["words"]:
+                ws = norm_words(w["w"])
+                if not ws:
+                    continue
+                for tok in ws:
+                    toks.append(tok)
+                    ts.append(w["t"])
             desired: list[float] = []
             lead = 0.0
             for m in ms:
-                idx = find_subseq(norm_words(m["moment_text"]), b_spoken)
-                if idx is not None and idx < len(sp_ts):
-                    desired.append(sp_ts[idx])
-                else:  # sfx cue or unmatched -> short lead-in slot
+                idx = find_subseq(norm_words(m["moment_text"]), toks)
+                if idx is not None:
+                    desired.append(ts[idx])
+                else:  # sfx cue / unmatched -> short lead-in slot
                     desired.append(b["start"] + lead)
                     lead += 1.2
             order = sorted(range(len(ms)), key=lambda j: (desired[j], j))

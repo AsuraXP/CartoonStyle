@@ -31,8 +31,10 @@ STYLE_BLOCK = (
     "Drawn as a minimalist hand-drawn stickman cartoon with thin clean ballpoint pen lines, "
     "no thick outlines, light flat colors, on a plain smooth solid off-white background - "
     "no paper texture, no crumpling. "
-    "The stickman has a round white head with a few short hair strands, "
-    "two small oval eyes with black pupils, a smile, and simple correct anatomy: two arms, two legs. "
+    "Every stickman has a round white head with a few short hair strands, "
+    "two small oval eyes with black pupils, and a smile. "
+    "Correct anatomy on every figure: exactly two arms and two legs, two hands, one head - "
+    "no third arm, no extra limbs, no extra hands, no extra fingers. "
     "Every character and object appears at its natural real-world size relative to the people - "
     "a lion is full-grown and huge, never a toy, miniature, or floating object. "
     "The scene is filled with the specific objects and details described, not empty or bland. "
@@ -40,6 +42,7 @@ STYLE_BLOCK = (
 )
 SCENE_GUARD = (
     "Only objects that belong in this scene - no toys, no miniatures, no floating objects, "
+    "no third arm, no extra limbs, no extra hands, "
     "no whiteboard, no pointer stick, no extra furniture, no text or lettering unless asked."
 )
 

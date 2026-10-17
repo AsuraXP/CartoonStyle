@@ -72,11 +72,13 @@ def load_rows(path: str) -> list[tuple[str, str]]:
         rows = list(csv.DictReader(f))
     out = []
     for i, r in enumerate(rows, 1):
-        sid = str(r.get("slide_id") or i).strip()
+        sid = str(r.get("slide_id") or i).strip().zfill(2)
+        mom = str(r.get("moment") or "").strip()
+        prefix = f"beat{sid}m{mom.zfill(2)}" if mom else f"beat{sid}"
         if r.get("prompt"):
-            out.append((sid, r["prompt"].strip()))
+            out.append((prefix, r["prompt"].strip()))
         elif r.get("visual_prompt") and r["visual_prompt"].strip():
-            out.append((sid, build_prompt(r["visual_prompt"])))
+            out.append((prefix, build_prompt(r["visual_prompt"])))
         else:
             raise SystemExit(f"row {i}: no prompt/visual_prompt text in {path}")
     return out
@@ -96,10 +98,10 @@ def run_worker(args: argparse.Namespace) -> None:
     n_rows = len(prompts)
     jobs = []
     for i in range(args.images):
-        sid, prompt = prompts[i % n_rows]
+        prefix, prompt = prompts[i % n_rows]
         variant = i // n_rows
         seed = args.seed + i
-        key = f"beat{sid.zfill(2)}_v{variant:02d}_s{seed:08x}"
+        key = f"{prefix}_v{variant:02d}_s{seed:08x}"
         jobs.append((key, prompt, seed))
     jobs = jobs[k::n]
     print(f"[gpu {k}] {len(jobs)} jobs of {args.images} total", flush=True)

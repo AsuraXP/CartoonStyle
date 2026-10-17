@@ -23,12 +23,31 @@ import tempfile
 from pathlib import Path
 
 
-def find_image(images_dir: str, beat: int, pick: int, fallback_dir: str | None) -> str | None:
-    pat = f"beat{beat:02d}_v{pick:02d}_s*.png"
+def find_image(images_dir: str, key: str, pick: int, fallback_dir: str | None) -> str | None:
+    pat = f"{key}_v{pick:02d}_s*.png"
     hits = sorted(glob.glob(str(Path(images_dir) / pat)))
     if not hits and fallback_dir:
         hits = sorted(glob.glob(str(Path(fallback_dir) / pat)))
     return hits[0] if hits else None
+
+
+def beat_segment(cmd_base: list[str], work: Path, beat: int, entries: list[tuple[str, float]],
+                 audio: Path) -> Path:
+    """One beat = one audio file + one or more images (word-locked)."""
+    lst = work / f"imgs{beat:02d}.txt"
+    lines = []
+    for img, sec in entries:
+        lines.append(f"file '{img}'\nduration {sec:.3f}\n")
+    lines.append(f"file '{entries[-1][0]}'\n")  # concat demuxer wants the last file repeated
+    lst.write_text("".join(lines), encoding="utf-8")
+    seg = work / f"seg{beat:02d}.mp4"
+    subprocess.run(cmd_base + ["-f", "concat", "-safe", "0", "-i", str(lst),
+                               "-i", str(audio),
+                               "-c:v", "libx264", "-tune", "stillimage", "-r", "30",
+                               "-c:a", "aac", "-b:a", "192k",
+                               "-pix_fmt", "yuv420p", "-shortest", str(seg)],
+                   check=True, capture_output=True)
+    return seg
 
 
 def main() -> None:
@@ -45,28 +64,35 @@ def main() -> None:
         raise SystemExit("ffmpeg not found - install ffmpeg (Kaggle/Colab images include it)")
 
     beats = json.loads(Path(args.timing).read_text(encoding="utf-8"))
+    mom_path = Path(args.timing).parent / "moments_timing.json"
+    moments = json.loads(mom_path.read_text(encoding="utf-8")) if mom_path.exists() else []
+    by_beat: dict[int, list[dict]] = {}
+    for m in moments:
+        by_beat.setdefault(int(m["beat"]), []).append(m)
+
     work = Path(tempfile.mkdtemp(prefix="stitch_"))
     segments = []
     missing = []
+    cmd_base = ["ffmpeg", "-y", "-loglevel", "error"]
 
     for b in beats:
         n = int(b["beat"])
-        img = find_image(args.images_dir, n, args.pick, args.fallback_dir or None)
         audio = Path(args.timing).parent / "audio" / f"beat{n:02d}.mp3"
-        if not img or not audio.exists():
+        entries: list[tuple[str, float]] = []
+        for m in sorted(by_beat.get(n, []), key=lambda x: x["start"]):
+            img = find_image(args.images_dir, m["key"], args.pick, args.fallback_dir or None)
+            if img:
+                entries.append((img, float(m["sec"])))
+        if not entries:
+            img = find_image(args.images_dir, f"beat{n:02d}", args.pick, args.fallback_dir or None)
+            if img:
+                entries.append((img, float(b["sec"])))
+        if not entries or not audio.exists():
             missing.append(n)
             continue
-        seg = work / f"seg{n:02d}.mp4"
-        cmd = ["ffmpeg", "-y", "-loop", "1", "-framerate", str(args.fps),
-               "-t", f"{b['sec']:.3f}", "-i", img,
-               "-i", str(audio),
-               "-c:v", "libx264", "-tune", "stillimage",
-               "-c:a", "aac", "-b:a", "192k",
-               "-pix_fmt", "yuv420p", "-shortest",
-               str(seg)]
-        subprocess.run(cmd, check=True, capture_output=True)
+        seg = beat_segment(cmd_base, work, n, entries, audio)
         segments.append(seg)
-        print(f"[stitch] beat {n:>2}  {b['sec']:>5.1f}s  {Path(img).name}", flush=True)
+        print(f"[stitch] beat {n:>2}  {b['sec']:>5.1f}s  {len(entries)} image(s)", flush=True)
 
     if missing:
         print(f"[stitch] WARNING: no image/audio for beats {missing} - they are skipped", flush=True)

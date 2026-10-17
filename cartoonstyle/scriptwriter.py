@@ -93,7 +93,7 @@ def validate(beats: list[str]) -> tuple[list[str], list[dict]]:
         if c > 1:
             issues.append(f'beats start alike ("{op}" x{c}) - make openings non-repetitive')
     first = beats[0].lower() if beats else ""
-    if not re.search(r"\?|imagine|what if|never|always|secret|why|how ", first):
+    if not re.search(r"\?|imagine|what if|never|always|secret|question|why |how |here's", first):
         issues.append("beat 1: no hook - open with a question or a bold claim")
     return issues, table
 
@@ -142,9 +142,9 @@ def cmd_package(args: argparse.Namespace) -> None:
 
     with open(out / "visuals.csv", "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow(["slide_id", "visual_prompt", "words_to_cover"])
+        w.writerow(["slide_id", "moment", "moment_text", "visual_prompt"])
         for i, b in enumerate(beats, 1):
-            w.writerow([i, "", " ".join(content_words(b))])
+            w.writerow([i, 1, b, ""])  # split into more moments as the words demand
 
     print(f"wrote {out}/script.md, beats.jsonl, visuals.csv")
     print("NEXT: fill visual_prompt per beat so every word in words_to_cover is visible,")
@@ -156,21 +156,44 @@ def cmd_package(args: argparse.Namespace) -> None:
 
 
 def cmd_cover(args: argparse.Namespace) -> None:
+    """Moment-level coverage gate.
+
+    Two checks per beat:
+      1. every moment_text is findable in the beat (so word timings can lock it)
+      2. every content word of the beat is claimed by some moment_text
+         (the images react to EVERY word the narrator says)
+    """
     beats = split_beats(Path(args.script).read_text(encoding="utf-8"))
     rows = list(csv.DictReader(open(args.visuals, encoding="utf-8")))
-    missing_total = 0
+    groups: dict[int, list[dict]] = {}
+    for r in rows:
+        groups.setdefault(int(r["slide_id"]), []).append(r)
+
+    def norm(t: str) -> list[str]:
+        return re.findall(r"[a-z0-9]+", t.lower())
+
+    def found_in(needle: list[str], hay: list[str]) -> bool:
+        n = len(needle)
+        return any(hay[i:i + n] == needle for i in range(len(hay) - n + 1))
+
+    fails = 0
     for i, b in enumerate(beats, 1):
-        row = rows[i - 1] if i - 1 < len(rows) else {}
-        vis = (row.get("visual_prompt") or "").lower()
-        missing = [w for w in content_words(b) if w not in vis and w[:-1] not in vis]
-        status = "OK " if not missing else "MISS"
-        print(f"beat {i:>2} [{status}] {len(content_words(b))} words to cover")
+        ms = groups.get(i, [])
+        hay = norm(b)
+        unfindable = [m["moment_text"][:32] for m in ms if not found_in(norm(m["moment_text"]), hay)]
+        claimed = " ".join(m["moment_text"] for m in ms).lower()
+        missing = [w for w in content_words(b) if w not in claimed and w[:-1] not in claimed]
+        status = "OK " if not unfindable and not missing else "MISS"
+        print(f"beat {i:>2} [{status}] {len(ms)} moment(s) | {len(content_words(b))} words")
+        for t in unfindable:
+            print(f"          moment text not found in beat: \"{t}...\"")
+            fails += 1
         if missing:
-            missing_total += len(missing)
-            print(f"          not reflected in the image prompt: {', '.join(missing)}")
+            print(f"          words no moment claims: {', '.join(missing)}")
+            fails += 1
     print()
-    print("COVERAGE PASS: every narration word is on screen." if not missing_total
-          else f"COVERAGE FAIL: {missing_total} word(s) unseen - the narrator will say things the viewer never sees.")
+    print("COVERAGE PASS: every narration word has its image moment." if not fails
+          else f"COVERAGE FAIL: {fails} problem(s) - the narrator would say things the viewer never sees.")
 
 
 def main() -> None:

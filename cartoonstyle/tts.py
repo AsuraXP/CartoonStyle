@@ -126,13 +126,26 @@ async def synth_one_take(text: str, voice: str, rate: str, dest: Path) -> list[d
     """One synthesis = natural prosody across the whole script + word timings."""
     import edge_tts
 
+    # edge-tts 7.x defaults to SentenceBoundary and DISABLES word events -
+    # we must explicitly ask for WordBoundary. edge-tts 6.x has no such param
+    # (it always sends words) -> fall back.
+    try:
+        comm = edge_tts.Communicate(text, voice, rate=rate, boundary="WordBoundary")
+    except TypeError:
+        comm = edge_tts.Communicate(text, voice, rate=rate)
+
     audio = bytearray()
     words: list[dict] = []
-    async for chunk in edge_tts.Communicate(text, voice, rate=rate).stream():
+    async for chunk in comm.stream():
         if chunk["type"] == "audio":
             audio += chunk["data"]
         elif chunk["type"] == "WordBoundary":
             words.append({"w": chunk["text"], "t": chunk["offset"] / 1e7})
+    if not words:
+        raise SystemExit(
+            "edge-tts returned 0 WordBoundary events - word timing is impossible. "
+            "Check the edge_tts version (needs >=6.1.9, boundary support since 7.x)."
+        )
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(bytes(audio))
     return words

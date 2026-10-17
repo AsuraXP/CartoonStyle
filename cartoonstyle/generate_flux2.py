@@ -28,13 +28,20 @@ DEFAULT_REFS = [
 ]
 
 STYLE_BLOCK = (
-    "Drawn as a minimalist hand-drawn stickman cartoon on crumpled white paper background, "
-    "thin clean ballpoint pen lines, no thick outlines, light flat colors. "
+    "Drawn as a minimalist hand-drawn stickman cartoon with thin clean ballpoint pen lines, "
+    "no thick outlines, light flat colors, on a plain smooth solid off-white background - "
+    "no paper texture, no crumpling. "
     "The stickman has a round white head with a few short hair strands, "
-    "two small oval eyes with black pupils. "
-    "Use the same character design as the reference images, but this is a completely new scene."
+    "two small oval eyes with black pupils, a smile, and simple correct anatomy: two arms, two legs. "
+    "Every character and object appears at its natural real-world size relative to the people - "
+    "a lion is full-grown and huge, never a toy, miniature, or floating object. "
+    "The scene is filled with the specific objects and details described, not empty or bland. "
+    "Use the same character design as the reference image, but this is a completely new scene."
 )
-SCENE_GUARD = "Only objects that belong in this scene - no whiteboard, no pointer stick, no extra furniture."
+SCENE_GUARD = (
+    "Only objects that belong in this scene - no toys, no miniatures, no floating objects, "
+    "no whiteboard, no pointer stick, no extra furniture, no text or lettering unless asked."
+)
 
 
 def build_prompt(visual: str) -> str:

@@ -71,9 +71,37 @@ def main() -> None:
         by_beat.setdefault(int(m["beat"]), []).append(m)
 
     work = Path(tempfile.mkdtemp(prefix="stitch_"))
+    cmd_base = ["ffmpeg", "-y", "-loglevel", "error"]
+
+    narr = Path(args.timing).parent / "narration.mp3"
+    if narr.exists() and moments:
+        # ONE continuous take: every moment image in one gapless stream + narration
+        entries = []
+        for m in sorted(moments, key=lambda x: x["start"]):
+            img = find_image(args.images_dir, m["key"], args.pick, args.fallback_dir or None)
+            if img:
+                entries.append((img, float(m["sec"])))
+            else:
+                print(f"[stitch] WARNING: no image for {m['key']} - skipped", flush=True)
+        if not entries:
+            raise SystemExit("no images found")
+        lst = work / "all.txt"
+        lines = []
+        for img, sec in entries:
+            lines.append(f"file '{img}'\nduration {sec:.3f}\n")
+        lines.append(f"file '{entries[-1][0]}'\n")
+        lst.write_text("".join(lines), encoding="utf-8")
+        subprocess.run(cmd_base + ["-f", "concat", "-safe", "0", "-i", str(lst),
+                                   "-i", str(narr),
+                                   "-c:v", "libx264", "-tune", "stillimage", "-r", "30",
+                                   "-c:a", "aac", "-b:a", "192k",
+                                   "-pix_fmt", "yuv420p", "-shortest", args.out],
+                       check=True, capture_output=True)
+        print(f"[stitch] VIDEO -> {args.out}  ({len(entries)} word-locked images, one narration take)", flush=True)
+        return
+
     segments = []
     missing = []
-    cmd_base = ["ffmpeg", "-y", "-loglevel", "error"]
 
     for b in beats:
         n = int(b["beat"])

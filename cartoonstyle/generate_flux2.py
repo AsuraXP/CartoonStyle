@@ -153,7 +153,10 @@ def run_worker(args: argparse.Namespace) -> None:
     print(f"[gpu {k}] flux2 klein ready ({args.offload} offload)", flush=True)
 
     manifest = os.path.join(args.out, f"manifest.shard{k}.jsonl")
-    done = kaggle_io.read_done([manifest, os.path.join(args.out, "manifest.jsonl")])
+    import glob as _glob
+    all_shards = sorted(_glob.glob(os.path.join(args.out, "manifest.shard*.jsonl")))
+    done = kaggle_io.read_done(all_shards + [os.path.join(args.out, "manifest.jsonl")])
+    print(f"[gpu {k}] resume: {len(done)} images already done", flush=True)
     if args.resume_from:
         done.update(kaggle_io.read_done([os.path.join(args.resume_from, "manifest.jsonl")]))
 
@@ -234,17 +237,19 @@ def main() -> None:
             fail += 1
             print(f"[main] worker {k} exited with code {rc}", flush=True)
 
-    shards = [os.path.join(args.out, f"manifest.shard{k}.jsonl") for k in range(args.gpus)]
-    if not fail:
-        from . import kaggle_io
+    import glob as _glob
 
-        merged = kaggle_io.merge_manifests(args.out, shards)
+    from . import kaggle_io
+
+    shards = sorted(_glob.glob(os.path.join(args.out, "manifest.shard*.jsonl")))
+    merged = kaggle_io.merge_manifests(args.out, shards)  # always, even after failures
+    if not fail:
         kaggle_io.update_zip(args.out, kaggle_io.list_new_images(args.out))
         if not args.no_push:
             kaggle_io.kaggle_push(args.out, "flux2 run complete")
         print(f"[main] done: {args.images} images | manifest {merged}", flush=True)
     else:
-        print(f"[main] {fail} worker(s) failed - completed images are safe; re-run to resume", flush=True)
+        print(f"[main] {fail} worker(s) failed - progress merged to {merged}; re-run to resume", flush=True)
         raise SystemExit(1)
 
 

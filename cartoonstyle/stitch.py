@@ -166,28 +166,33 @@ def main() -> None:
             raise SystemExit("no images found")
 
         # Per-moment segments: each gets its own Ken Burns zoompan so static
-        # images feel alive (CGP Grey / Kurzgesagt style subtle motion).
+        # images feel alive (CGP Grey / Kurzgesagt style subtle slow zoom).
         import random as _r
-        _r.seed(0)
+        _r.seed(42)
         segs = []
+        total_frames = 0
         for idx, (img, sec) in enumerate(entries):
             sec = max(sec, 0.4)
+            n_frames = max(2, int(round(sec * 30)))
             seg = work / f"m{idx:04d}.mp4"
-            # Random Ken Burns: slow zoom in or out + slight pan
-            zdir = _r.choice(["in", "out"])
-            zfrom = "1.0" if zdir == "in" else "1.12"
-            zto = "1.12" if zdir == "in" else "1.0"
-            pan_x = _r.choice(["0", "(iw-ow)/2", "iw-ow"])
-            pan_y = _r.choice(["0", "(ih-oh)/2", "ih-oh"])
+            # Subtle slow zoom-in, ~8% over the segment duration. Very occasional pan.
+            zamp = 0.08
+            # Keep zoom anchored on face/center most of the time; 20% chance slight pan
+            px = "iw/2-(iw/zoom/2)"
+            py = "ih/2-(ih/zoom/2)"
+            if _r.random() < 0.2:
+                # offset slightly left/right for subtle drift
+                ox = _r.choice(["-80", "80"])
+                px = f"iw/2-(iw/zoom/2)+{ox}"
             vf = (
-                f"scale=2400:1350:force_original_aspect_ratio=increase,"
-                f"crop=2400:1350:(iw-ow)/2:(ih-oh)/2,"
-                f"zoompan=z='if(eq(on,0),{zfrom},{zfrom}+({zto}-{zfrom})*on/(30*{sec:.3f}))':"
-                f"x='{pan_x}':y='{pan_y}':"
-                f"d={max(1, int(30*sec))}:s=1920x1080:fps=30,"
-                f"setsar=1,fps=30"
+                "scale=2400:1350:force_original_aspect_ratio=increase,"
+                "crop=2400:1350:(iw-ow)/2:(ih-oh)/2,"
+                f"zoompan=z='1+{zamp}*on/{n_frames}':"
+                f"x='{px}':y='{py}':"
+                f"d={n_frames}:s=1920x1080:fps=30,"
+                "setsar=1,fps=30"
             )
-            cmd = cmd_base + ["-loop", "1", "-i", str(img), "-t", f"{sec:.3f}",
+            cmd = cmd_base + ["-loop", "1", "-i", str(img), "-t", f"{n_frames/30:.3f}",
                               "-vf", vf,
                               "-c:v", "libx264", "-preset", "medium", "-crf", "20",
                               "-r", "30", "-pix_fmt", "yuv420p", "-an", str(seg)]
@@ -198,6 +203,7 @@ def main() -> None:
                       e.stderr.decode(errors="replace")[-1200:], flush=True)
                 raise
             segs.append(seg)
+            total_frames += n_frames
             if (idx + 1) % 10 == 0:
                 print(f"[stitch] rendered {idx+1}/{len(entries)} image segments", flush=True)
 

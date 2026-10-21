@@ -41,9 +41,12 @@ def beat_segment(cmd_base: list[str], work: Path, beat: int, entries: list[tuple
     lines.append(f"file '{entries[-1][0]}'\n")  # concat demuxer wants the last file repeated
     lst.write_text("".join(lines), encoding="utf-8")
     seg = work / f"seg{beat:02d}.mp4"
+    vf = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:white,setsar=1,fps=30"
     subprocess.run(cmd_base + ["-f", "concat", "-safe", "0", "-i", str(lst),
                                "-i", str(audio),
-                               "-c:v", "libx264", "-tune", "stillimage", "-r", "30",
+                               "-vf", vf,
+                               "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+                               "-r", "30", "-vsync", "cfr",
                                "-c:a", "aac", "-b:a", "192k",
                                "-pix_fmt", "yuv420p", "-shortest", str(seg)],
                    check=True, capture_output=True)
@@ -173,14 +176,27 @@ def main() -> None:
                 vopts = ["-vf", f"ass={work / 'captions.ass'}"]
             write_ass(moments, work / "captions.ass", family)
         aopts = [] if args.no_loudnorm else ["-af", "loudnorm=I=-14:TP=-1.5:LRA=11"]
-        subprocess.run(cmd_base + ["-f", "concat", "-safe", "0", "-i", str(lst),
-                                   "-i", str(narr),
-                                   *vopts,
-                                   "-c:v", "libx264", "-tune", "stillimage", "-r", "30",
-                                   *aopts,
-                                   "-c:a", "aac", "-b:a", "192k",
-                                   "-pix_fmt", "yuv420p", "-shortest", args.out],
-                       check=True, capture_output=True)
+        # Safety: force every input frame to exactly 1920x1080 on white canvas
+        scale_vf = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:white,setsar=1,fps=30"
+        if vopts and "-vf" in vopts:
+            # Merge with existing caption vf
+            i = vopts.index("-vf")
+            vopts[i + 1] = scale_vf + "," + vopts[i + 1]
+        else:
+            vopts = ["-vf", scale_vf] + vopts
+        cmd = cmd_base + ["-f", "concat", "-safe", "0", "-i", str(lst),
+                          "-i", str(narr),
+                          *vopts,
+                          "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+                          "-r", "30", "-vsync", "cfr",
+                          *aopts,
+                          "-c:a", "aac", "-b:a", "192k",
+                          "-pix_fmt", "yuv420p", "-shortest", args.out]
+        try:
+            subprocess.run(cmd, check=True, capture_output=True)
+        except subprocess.CalledProcessError as e:
+            print("FFMPEG STDERR:", e.stderr.decode(errors="replace")[-2000:], flush=True)
+            raise
         print(f"[stitch] VIDEO -> {args.out}  ({len(entries)} word-locked images, one narration take)", flush=True)
         return
 

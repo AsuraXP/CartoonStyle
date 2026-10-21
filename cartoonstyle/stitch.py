@@ -41,13 +41,7 @@ def beat_segment(cmd_base: list[str], work: Path, beat: int, entries: list[tuple
     lines.append(f"file '{entries[-1][0]}'\n")  # concat demuxer wants the last file repeated
     lst.write_text("".join(lines), encoding="utf-8")
     seg = work / f"seg{beat:02d}.mp4"
-    import random as _r
-    vf = (
-        "scale=2400:1350:force_original_aspect_ratio=increase,"
-        "crop=2400:1350:(iw-ow)/2:(ih-oh)/2,"
-        "zoompan=z='if(eq(on,0),1.0,1.0+0.12*on/75)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-        f"d=90:s=1920x1080:fps=30,setsar=1,fps=30"
-    )
+    vf = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:white,setsar=1,fps=30,format=yuv420p"
     subprocess.run(cmd_base + ["-f", "concat", "-safe", "0", "-i", str(lst),
                                "-i", str(audio),
                                "-vf", vf,
@@ -164,71 +158,45 @@ def main() -> None:
                 print(f"[stitch] WARNING: no image for {m['key']} - skipped", flush=True)
         if not entries:
             raise SystemExit("no images found")
-
-        # Per-moment segments: each gets its own Ken Burns zoompan so static
-        # images feel alive (CGP Grey / Kurzgesagt style subtle slow zoom).
-        import random as _r
-        _r.seed(42)
-        segs = []
-        total_frames = 0
-        for idx, (img, sec) in enumerate(entries):
-            sec = max(sec, 0.4)
-            n_frames = max(2, int(round(sec * 30)))
-            seg = work / f"m{idx:04d}.mp4"
-            # Subtle slow zoom-in, ~8% over the segment duration. Very occasional pan.
-            zamp = 0.08
-            # Keep zoom anchored on face/center most of the time; 20% chance slight pan
-            px = "iw/2-(iw/zoom/2)"
-            py = "ih/2-(ih/zoom/2)"
-            if _r.random() < 0.2:
-                # offset slightly left/right for subtle drift
-                ox = _r.choice(["-80", "80"])
-                px = f"iw/2-(iw/zoom/2)+{ox}"
-            vf = (
-                "scale=2400:1350:force_original_aspect_ratio=increase,"
-                "crop=2400:1350:(iw-ow)/2:(ih-oh)/2,"
-                f"zoompan=z='1+{zamp}*on/{n_frames}':"
-                f"x='{px}':y='{py}':"
-                f"d={n_frames}:s=1920x1080:fps=30,"
-                "setsar=1,fps=30"
-            )
-            cmd = cmd_base + ["-loop", "1", "-i", str(img), "-t", f"{n_frames/30:.3f}",
-                              "-vf", vf,
-                              "-c:v", "libx264", "-preset", "medium", "-crf", "20",
-                              "-r", "30", "-pix_fmt", "yuv420p", "-an", str(seg)]
-            try:
-                subprocess.run(cmd, check=True, capture_output=True)
-            except subprocess.CalledProcessError as e:
-                print(f"[stitch] seg {idx} FFMPEG STDERR:",
-                      e.stderr.decode(errors="replace")[-1200:], flush=True)
-                raise
-            segs.append(seg)
-            total_frames += n_frames
-            if (idx + 1) % 10 == 0:
-                print(f"[stitch] rendered {idx+1}/{len(entries)} image segments", flush=True)
-
-        # Concatenate segments
-        cl = work / "segs.txt"
-        cl.write_text("\n".join(f"file '{s}'" for s in segs) + "\n", encoding="utf-8")
-        concat = work / "silent.mp4"
-        subprocess.run(cmd_base + ["-f", "concat", "-safe", "0", "-i", str(cl),
-                                   "-c:v", "libx264", "-preset", "medium", "-crf", "20",
-                                   "-pix_fmt", "yuv420p", "-r", "30", "-an", str(concat)],
-                       check=True, capture_output=True)
-
-        # Mux video + narration (with optional captions burned in later via another pass)
+        lst = work / "all.txt"
+        lines = []
+        for img, sec in entries:
+            lines.append(f"file '{img}'\nduration {sec:.3f}\n")
+        lines.append(f"file '{entries[-1][0]}'\n")
+        lst.write_text("".join(lines), encoding="utf-8")
+        vopts = []
+        if args.captions:
+            font_path = Path(args.font) if args.font else Path("Montserrat.ttf")
+            family = (font_path.stem.split("[")[0].split("-")[0].strip() or "Montserrat")
+            if font_path.exists():
+                fontsdir = str(font_path.parent.resolve())
+                vopts = ["-vf", f"ass={work / 'captions.ass'}:fontsdir={fontsdir}"]
+            else:
+                print("[stitch] WARNING: font file missing - captions use system default sans", flush=True)
+                vopts = ["-vf", f"ass={work / 'captions.ass'}"]
+            write_ass(moments, work / "captions.ass", family)
+        # Force uniform 1920x1080 on white canvas in case input frames differ
+        scale_vf = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:white,setsar=1,fps=30,format=yuv420p"
+        if vopts and "-vf" in vopts:
+            i = vopts.index("-vf")
+            vopts[i + 1] = scale_vf + "," + vopts[i + 1]
+        else:
+            vopts = ["-vf", scale_vf]
         aopts = [] if args.no_loudnorm else ["-af", "loudnorm=I=-14:TP=-1.5:LRA=11"]
-        cmd = cmd_base + ["-i", str(concat), "-i", str(narr),
-                          "-c:v", "copy",
+        cmd = cmd_base + ["-f", "concat", "-safe", "0", "-i", str(lst),
+                          "-i", str(narr),
+                          *vopts,
+                          "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+                          "-r", "30", "-vsync", "cfr",
                           *aopts,
                           "-c:a", "aac", "-b:a", "192k",
-                          "-shortest", args.out]
+                          "-pix_fmt", "yuv420p", "-shortest", args.out]
         try:
             subprocess.run(cmd, check=True, capture_output=True)
         except subprocess.CalledProcessError as e:
-            print("FFMPEG MUX STDERR:", e.stderr.decode(errors="replace")[-2000:], flush=True)
+            print("FFMPEG STDERR:", e.stderr.decode(errors="replace")[-2000:], flush=True)
             raise
-        print(f"[stitch] VIDEO -> {args.out}  ({len(entries)} ken-burns word-locked images, one narration take)", flush=True)
+        print(f"[stitch] VIDEO -> {args.out}  ({len(entries)} word-locked images, one narration take)", flush=True)
         return
 
     segments = []

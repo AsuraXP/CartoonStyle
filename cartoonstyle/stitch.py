@@ -41,7 +41,13 @@ def beat_segment(cmd_base: list[str], work: Path, beat: int, entries: list[tuple
     lines.append(f"file '{entries[-1][0]}'\n")  # concat demuxer wants the last file repeated
     lst.write_text("".join(lines), encoding="utf-8")
     seg = work / f"seg{beat:02d}.mp4"
-    vf = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:white,setsar=1,fps=30"
+    import random as _r
+    vf = (
+        "scale=2400:1350:force_original_aspect_ratio=increase,"
+        "crop=2400:1350:(iw-ow)/2:(ih-oh)/2,"
+        "zoompan=z='if(eq(on,0),1.0,1.0+0.12*on/75)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+        f"d=90:s=1920x1080:fps=30,setsar=1,fps=30"
+    )
     subprocess.run(cmd_base + ["-f", "concat", "-safe", "0", "-i", str(lst),
                                "-i", str(audio),
                                "-vf", vf,
@@ -158,46 +164,65 @@ def main() -> None:
                 print(f"[stitch] WARNING: no image for {m['key']} - skipped", flush=True)
         if not entries:
             raise SystemExit("no images found")
-        lst = work / "all.txt"
-        lines = []
-        for img, sec in entries:
-            lines.append(f"file '{img}'\nduration {sec:.3f}\n")
-        lines.append(f"file '{entries[-1][0]}'\n")
-        lst.write_text("".join(lines), encoding="utf-8")
-        vopts = []
-        if args.captions:
-            font_path = Path(args.font) if args.font else Path("Montserrat.ttf")
-            family = (font_path.stem.split("[")[0].split("-")[0].strip() or "Montserrat")
-            if font_path.exists():
-                fontsdir = str(font_path.parent.resolve())
-                vopts = ["-vf", f"ass={work / 'captions.ass'}:fontsdir={fontsdir}"]
-            else:
-                print("[stitch] WARNING: font file missing - captions use system default sans", flush=True)
-                vopts = ["-vf", f"ass={work / 'captions.ass'}"]
-            write_ass(moments, work / "captions.ass", family)
+
+        # Per-moment segments: each gets its own Ken Burns zoompan so static
+        # images feel alive (CGP Grey / Kurzgesagt style subtle motion).
+        import random as _r
+        _r.seed(0)
+        segs = []
+        for idx, (img, sec) in enumerate(entries):
+            sec = max(sec, 0.4)
+            seg = work / f"m{idx:04d}.mp4"
+            # Random Ken Burns: slow zoom in or out + slight pan
+            zdir = _r.choice(["in", "out"])
+            zfrom = "1.0" if zdir == "in" else "1.12"
+            zto = "1.12" if zdir == "in" else "1.0"
+            pan_x = _r.choice(["0", "(iw-ow)/2", "iw-ow"])
+            pan_y = _r.choice(["0", "(ih-oh)/2", "ih-oh"])
+            vf = (
+                f"scale=2400:1350:force_original_aspect_ratio=increase,"
+                f"crop=2400:1350:(iw-ow)/2:(ih-oh)/2,"
+                f"zoompan=z='if(eq(on,0),{zfrom},{zfrom}+({zto}-{zfrom})*on/(30*{sec:.3f}))':"
+                f"x='{pan_x}':y='{pan_y}':"
+                f"d={max(1, int(30*sec))}:s=1920x1080:fps=30,"
+                f"setsar=1,fps=30"
+            )
+            cmd = cmd_base + ["-loop", "1", "-i", str(img), "-t", f"{sec:.3f}",
+                              "-vf", vf,
+                              "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+                              "-r", "30", "-pix_fmt", "yuv420p", "-an", str(seg)]
+            try:
+                subprocess.run(cmd, check=True, capture_output=True)
+            except subprocess.CalledProcessError as e:
+                print(f"[stitch] seg {idx} FFMPEG STDERR:",
+                      e.stderr.decode(errors="replace")[-1200:], flush=True)
+                raise
+            segs.append(seg)
+            if (idx + 1) % 10 == 0:
+                print(f"[stitch] rendered {idx+1}/{len(entries)} image segments", flush=True)
+
+        # Concatenate segments
+        cl = work / "segs.txt"
+        cl.write_text("\n".join(f"file '{s}'" for s in segs) + "\n", encoding="utf-8")
+        concat = work / "silent.mp4"
+        subprocess.run(cmd_base + ["-f", "concat", "-safe", "0", "-i", str(cl),
+                                   "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+                                   "-pix_fmt", "yuv420p", "-r", "30", "-an", str(concat)],
+                       check=True, capture_output=True)
+
+        # Mux video + narration (with optional captions burned in later via another pass)
         aopts = [] if args.no_loudnorm else ["-af", "loudnorm=I=-14:TP=-1.5:LRA=11"]
-        # Safety: force every input frame to exactly 1920x1080 on white canvas
-        scale_vf = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:white,setsar=1,fps=30"
-        if vopts and "-vf" in vopts:
-            # Merge with existing caption vf
-            i = vopts.index("-vf")
-            vopts[i + 1] = scale_vf + "," + vopts[i + 1]
-        else:
-            vopts = ["-vf", scale_vf] + vopts
-        cmd = cmd_base + ["-f", "concat", "-safe", "0", "-i", str(lst),
-                          "-i", str(narr),
-                          *vopts,
-                          "-c:v", "libx264", "-preset", "medium", "-crf", "20",
-                          "-r", "30", "-vsync", "cfr",
+        cmd = cmd_base + ["-i", str(concat), "-i", str(narr),
+                          "-c:v", "copy",
                           *aopts,
                           "-c:a", "aac", "-b:a", "192k",
-                          "-pix_fmt", "yuv420p", "-shortest", args.out]
+                          "-shortest", args.out]
         try:
             subprocess.run(cmd, check=True, capture_output=True)
         except subprocess.CalledProcessError as e:
-            print("FFMPEG STDERR:", e.stderr.decode(errors="replace")[-2000:], flush=True)
+            print("FFMPEG MUX STDERR:", e.stderr.decode(errors="replace")[-2000:], flush=True)
             raise
-        print(f"[stitch] VIDEO -> {args.out}  ({len(entries)} word-locked images, one narration take)", flush=True)
+        print(f"[stitch] VIDEO -> {args.out}  ({len(entries)} ken-burns word-locked images, one narration take)", flush=True)
         return
 
     segments = []

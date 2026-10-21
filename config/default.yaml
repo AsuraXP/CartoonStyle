@@ -1,0 +1,66 @@
+# CartoonStyle defaults — tuned for Kaggle T4 x2, YouTube 1920x1080 landscape.
+run:
+  name: cartoonstyle
+  seed: 42
+  images: 200
+
+model:
+  # NoobAI-XL 1.1 (SDXL-arch, epsilon): 2026's standard for recognizable figures,
+  # character consistency and prompt adherence. LoRAs must be trained on THIS base.
+  base: Laxhar/noobai-XL-1.1
+  lightning_repo: ByteDance/SDXL-Lightning
+  lightning_steps: null   # null = native sampling (recommended for NoobAI); 4/8 to try speed distills
+  lora: null              # path to your trained style LoRA (dir or .safetensors)
+  lora_scale: 1.3
+
+generation:
+  scheduler: euler_a      # NoobAI community default
+  width: 1344             # SDXL 16:9 bucket -> upscaled to 1920x1080
+  height: 768
+  steps: 24               # native sampling depth (ignored when lightning_steps set)
+  guidance_scale: 5.0     # NoobAI wants real CFG (community range 3-6)
+  batch: 2                # per GPU; use 1 with --lowvram
+  negative: "text, watermark, blurry, photo, 3d render, shading, shadows, dark lighting, silhouette, grayscale, monochrome, muted colors, soft watercolor, pencil sketch, nose, deformed face, extra eyes, extra limbs"
+
+prompts:
+  file: config/prompts.example.csv   # set to null to use templates below
+  style_prefix: ""   # rows carry the full training-exact format (trigger + spec + visual)
+  templates:
+    subjects:
+      - "a cartoon stickman character"
+      - "two cartoon stickman characters talking"
+      - "a cartoon stickman character looking worried"
+      - "a cartoon stickman character smiling"
+    scenes:
+      - "in a simple bedroom at night, alarm clock on the nightstand"
+      - "standing beside a whiteboard in a classroom"
+      - "sitting at a desk with a laptop in a simple office"
+      - "waiting at a bus stop on a city street"
+      - "cooking in a simple kitchen"
+      - "lying on a couch in a living room, tv glow"
+    shots:
+      - "wide shot"
+      - "medium shot"
+      - "slightly low angle"
+
+output:
+  dir: /kaggle/working/cartoonstyle-out
+  upscale_to: [1920, 1080]
+  upscale_method: lanczos   # set "esrgan" + CARTOONSTYLE_ESRGAN=<weights.pth> for sharper upscale
+  push_every_images: 50
+  push_every_seconds: 600
+  auto_kaggle_push: true    # periodic push to a private Kaggle Dataset (crash insurance)
+  dataset_slug: null        # optional: username/dataset-name to version into
+
+train:
+  data_dir: /kaggle/input/cartoonstyle-refs
+  out_dir: /kaggle/working/cartoonstyle-lora
+  width: 1024
+  height: 1024
+  rank: 16
+  lr: 0.0001
+  steps: 1200
+  batch: 1
+  grad_accum: 4
+  save_every: 250
+  trigger: "ckstyle"

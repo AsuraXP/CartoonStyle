@@ -1,0 +1,57 @@
+# Preset B: black-ink doodle stickman on crumpled paper (whiteboard/explainer look).
+run:
+  name: cartoonstyle-doodle
+  seed: 42
+  images: 200
+
+model:
+  base: stabilityai/stable-diffusion-xl-base-1.0
+  lightning_repo: ByteDance/SDXL-Lightning
+  lightning_steps: 4
+  lora: null
+  lora_scale: 0.85
+
+generation:
+  width: 1344
+  height: 768
+  steps: 4
+  guidance_scale: 0.0
+  batch: 2
+  negative: "text, watermark, logo, signature, blurry, low quality, jpeg artifacts, 3d render, photorealistic, photo, color, shading"
+
+prompts:
+  file: config/prompts.doodle.example.csv
+  style_prefix: "hand-drawn black ink doodle on crumpled white paper, simple stickman line art, minimal sketch, paper texture background"
+  templates:
+    subjects:
+      - "a simple stickman doodle character"
+      - "a stickman doodle character holding a pointer"
+    scenes:
+      - "standing next to a blank rectangle on paper"
+      - "pointing at a simple chart"
+      - "walking across the paper"
+      - "sitting on a doodled chair"
+    shots:
+      - "wide layout with empty space"
+
+output:
+  dir: /kaggle/working/cartoonstyle-out
+  upscale_to: [1920, 1080]
+  upscale_method: lanczos
+  push_every_images: 50
+  push_every_seconds: 600
+  auto_kaggle_push: true
+  dataset_slug: null
+
+train:
+  data_dir: /kaggle/input/cartoonstyle-refs
+  out_dir: /kaggle/working/cartoonstyle-lora
+  width: 1024
+  height: 1024
+  rank: 16
+  lr: 0.0001
+  steps: 1200
+  batch: 1
+  grad_accum: 4
+  save_every: 250
+  trigger: "ckdoodle"

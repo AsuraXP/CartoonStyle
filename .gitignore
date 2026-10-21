@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.ipynb_checkpoints/
+# generated artifacts
+cartoonstyle-out/
+cartoonstyle-lora/
+output/
+outputs/
+snapshots/
+*.zip
+!notebooks/**
+.DS_Store

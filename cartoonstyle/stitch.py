@@ -28,7 +28,7 @@ def find_image(images_dir: str, key: str, pick: int, fallback_dir: str | None) -
     hits = sorted(glob.glob(str(Path(images_dir) / pat)))
     if not hits and fallback_dir:
         hits = sorted(glob.glob(str(Path(fallback_dir) / pat)))
-    return hits[0] if hits else None
+    return str(Path(hits[0]).resolve()) if hits else None
 
 
 def beat_segment(cmd_base: list[str], work: Path, beat: int, entries: list[tuple[str, float]],

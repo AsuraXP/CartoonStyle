@@ -239,44 +239,33 @@ def main() -> None:
     sp_times.append(total)
 
     timed = []
-    beat_pos = 0  # search forward sequentially so beats don't re-match earlier words
+    # Global search for each beat (each beat's opening phrase is unique enough
+    # that the FIRST match in the full stream is the correct one). Sequential
+    # beat_pos advancement breaks when edge-tts token count differs from
+    # norm_words prediction (contractions split, number pronunciations, etc.).
     for i, b in enumerate(items):
         beat = int(b["beat"])
         hit = None
-        # Fuzzy match first (strips number words) - robust against edge-tts
-        # number expansion differences ("eighties" vs "eighty s" etc.)
+        # Fuzzy match (strips number words) first
         for variant in norm_variants(spoken[beat]):
-            idx = find_subseq_fuzzy(variant, sp_tokens, beat_pos)
+            idx = find_subseq_fuzzy(variant, sp_tokens, 0)
             if idx is not None:
                 if hit is None or idx < hit[0]:
                     hit = (idx, len(_strip_numbers(variant)))
         if hit is None:
-            # Fallback to exact match with fuzz
-            search_from = max(0, beat_pos - 15)
-            for variant in norm_variants(spoken[beat]):
-                idx = find_subseq(variant, sp_tokens, search_from)
-                if idx is not None:
-                    if hit is None or idx < hit[0]:
-                        hit = (idx, len(variant))
-        if hit is None:
-            for variant in norm_variants(spoken[beat]):
-                idx = find_subseq(variant, sp_tokens, 0)
-                if idx is not None:
-                    if hit is None or idx < hit[0]:
-                        hit = (idx, len(variant))
+            # Exact match fallback
+            hit = match_first(norm_variants(spoken[beat]), sp_tokens, 0)
         if hit is not None:
             idx, nlen = hit
             start = sp_times[idx]
-            # Find end: scan forward from idx until we've consumed ~enough tokens
-            # (fuzzy match only counts content-word tokens, so we approximate end)
-            end_idx = min(idx + len(norm_words(spoken[beat])) - 1, len(sp_times) - 1)
-            end = sp_times[end_idx] if end_idx > idx else start + 1.0
-            beat_pos = idx + len(norm_words(spoken[beat]))
+            # end = start + approximate beat duration by word count
+            approx_tokens = len(norm_words(spoken[beat]))
+            end_idx = min(idx + approx_tokens - 1, len(sp_times) - 1)
+            end = sp_times[end_idx]
             print(f"[tts] beat {beat:02d}: matched at word idx {idx} start={start:.2f}s end={end:.2f}s", flush=True)
         else:
             frac = i / max(1, len(items))
             start, end = total * frac, total * (i + 1) / max(1, len(items))
-            beat_pos = int(len(sp_tokens) * (i + 1) / max(1, len(items)))
             print(f"[tts] WARNING: beat {beat} text not found in word stream - proportional span {start:.1f}-{end:.1f}s", flush=True)
         timed.append({**b, "spoken": spoken[beat], "start": start, "sec": end - start,
                       "words": [w for w in words if start <= w["t"] < end]})

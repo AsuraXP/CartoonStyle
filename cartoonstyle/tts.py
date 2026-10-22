@@ -57,53 +57,18 @@ def num2words_en(n: int) -> str:
 
 
 def norm_words(text: str) -> list[str]:
-    """Tokens for matching: numerals expanded the way TTS speaks them."""
-    def repl(m: re.Match) -> str:
-        raw = m.group(0).replace(",", "")
-        n = int(raw.rstrip("s"))
-        if raw.endswith("s"):
-            # Decades: "1980s" -> "nineteen eighties", "80s" -> "eighties"
-            if n >= 1000:
-                hi, lo = n // 100, n % 100
-                return num2words_en(hi) + " " + _TENS[lo // 10].rstrip("y") + "ies"
-            elif 20 <= n < 100:
-                return _TENS[n // 10].rstrip("y") + "ies"
-            return num2words_en(n)
-        return num2words_en(n)
-    text = re.sub(r"\d[\d,]*s?", repl, text)
+    """Tokens for matching. edge-tts WordBoundary events emit numerals as raw
+    digit strings ('1980s', '1963', '264') and contractions split as separate
+    words (\"couldn't\" -> [\"couldn\", \"t\"]), \"seventeen-year-old\" ->
+    [\"seventeen\", \"year\", \"old\"]). Mirror that exactly so predictions match
+    the actual token stream."""
     return re.findall(r"[a-z0-9]+", text.lower())
 
 
 def norm_variants(text: str) -> list[list[str]]:
-    """Token variants to try: quantity-style first, then year-style (1840 ->
-    'eighteen forty'), since TTS pronunciation depends on context. Handles
-    decades (1980s -> 'nineteen eighties')."""
-    v1 = norm_words(text)
-    out = [v1]
-
-    def year_repl(m: re.Match) -> str:
-        raw = m.group(0).replace(",", "")
-        n = int(raw.rstrip("s"))
-        is_decade = raw.endswith("s")
-        if is_decade and 1000 <= n <= 1999:
-            hi, lo = n // 100, n % 100
-            return num2words_en(hi) + " " + _TENS[lo // 10].rstrip("y") + "ies"
-        if is_decade and 20 <= n < 100:
-            return _TENS[n // 10].rstrip("y") + "ies"
-        if 1000 <= n <= 1999 and not is_decade:
-            hi, lo = n // 100, n % 100
-            if lo == 0:
-                return num2words_en(hi) + " hundred"
-            if lo < 10:
-                return num2words_en(hi) + " oh " + _ONES[lo]
-            return num2words_en(hi) + " " + num2words_en(lo)
-        return num2words_en(n)
-
-    t2 = re.sub(r"\d[\d,]*s?", year_repl, text)
-    v2 = re.findall(r"[a-z0-9]+", t2.lower())
-    if v2 != v1:
-        out.append(v2)
-    return out
+    """Token variants to try. edge-tts emits numerals as raw digit strings,
+    contractions split at apostrophe, hyphens split - just lowercase+alnum."""
+    return [norm_words(text)]
 
 
 def match_first(needles: list[list[str]], hay: list[str], start: int = 0) -> tuple[int, int] | None:
@@ -170,11 +135,14 @@ async def synth_one_take(text: str, voice: str, rate: str, dest: Path) -> list[d
 
 
 def stream_tokens(words: list[dict]) -> tuple[list[str], list[float]]:
-    """Word-stream tokens + per-token times (always aligned with each other)."""
+    """Word-stream tokens + per-token times (always aligned with each other).
+    Numerals/digits in edge-tts WordBoundary text are expanded to words the
+    same way norm_words does (e.g. "1980s" -> ["nineteen", "eighties"]) so
+    they match the predicted-token side."""
     toks: list[str] = []
     ts: list[float] = []
     for w in words:
-        ws = re.findall(r"[a-z0-9]+", w["w"].lower())
+        ws = norm_words(w["w"])  # expand digits/decades consistently
         for tok in ws:
             toks.append(tok)
             ts.append(w["t"])

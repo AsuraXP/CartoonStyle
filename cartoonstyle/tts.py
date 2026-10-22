@@ -199,21 +199,46 @@ def main() -> None:
 
     timed = []
     beat_pos = 0  # search forward sequentially so beats don't re-match earlier words
+    FUZZ = 15  # allow up to 15 tokens of drift for tokenization differences
     for i, b in enumerate(items):
         beat = int(b["beat"])
-        hit = match_first(norm_variants(spoken[beat]), sp_tokens, beat_pos)
+        hit = None
+        # Search from max(0, beat_pos - FUZZ) to handle small tokenization
+        # differences between norm_words prediction and what edge-tts
+        # actually emits (apostrophes, number expansion, hyphenation).
+        search_from = max(0, beat_pos - FUZZ)
+        for variant in norm_variants(spoken[beat]):
+            idx = find_subseq(variant, sp_tokens, search_from)
+            if idx is not None:
+                if hit is None or idx < hit[0]:
+                    hit = (idx, len(variant))
+        if hit is None:
+            # Try with no fuzz window
+            for variant in norm_variants(spoken[beat]):
+                idx = find_subseq(variant, sp_tokens, beat_pos)
+                if idx is not None:
+                    if hit is None or idx < hit[0]:
+                        hit = (idx, len(variant))
+        if hit is None:
+            # Last resort: global search (e.g. beat11 after long fallback stretch)
+            for variant in norm_variants(spoken[beat]):
+                idx = find_subseq(variant, sp_tokens, 0)
+                if idx is not None:
+                    if hit is None or idx < hit[0]:
+                        hit = (idx, len(variant))
         if hit is not None:
             idx, nlen = hit
             start = sp_times[idx]
-            end = sp_times[min(idx + nlen, len(sp_times) - 1)]
+            # end time = time of LAST matched token (idx + nlen - 1), not one past
+            end_idx = min(idx + nlen - 1, len(sp_times) - 1)
+            end = sp_times[end_idx] if end_idx > idx else start + 1.0
             beat_pos = idx + nlen
-            print(f"[tts] beat {beat:02d}: matched at word idx {idx} start={start:.2f}s end={end:.2f}s", flush=True)
+            print(f"[tts] beat {beat:02d}: matched at word idx {idx} start={start:.2f}s end={end:.2f}s (len={nlen})", flush=True)
         else:
             frac = i / max(1, len(items))
             start, end = total * frac, total * (i + 1) / max(1, len(items))
-            # advance beat_pos proportionally to avoid cascading fallback
             beat_pos = int(len(sp_tokens) * (i + 1) / max(1, len(items)))
-            print(f"[tts] WARNING: beat {beat} text not found in word stream (numerals?) - proportional span", flush=True)
+            print(f"[tts] WARNING: beat {beat} text not found in word stream - proportional span {start:.1f}-{end:.1f}s", flush=True)
         timed.append({**b, "spoken": spoken[beat], "start": start, "sec": end - start,
                       "words": [w for w in words if start <= w["t"] < end]})
 

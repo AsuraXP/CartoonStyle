@@ -198,16 +198,21 @@ def main() -> None:
     sp_times.append(total)
 
     timed = []
+    beat_pos = 0  # search forward sequentially so beats don't re-match earlier words
     for i, b in enumerate(items):
         beat = int(b["beat"])
-        hit = match_first(norm_variants(spoken[beat]), sp_tokens)
+        hit = match_first(norm_variants(spoken[beat]), sp_tokens, beat_pos)
         if hit is not None:
             idx, nlen = hit
             start = sp_times[idx]
             end = sp_times[min(idx + nlen, len(sp_times) - 1)]
+            beat_pos = idx + nlen
+            print(f"[tts] beat {beat:02d}: matched at word idx {idx} start={start:.2f}s end={end:.2f}s", flush=True)
         else:
             frac = i / max(1, len(items))
             start, end = total * frac, total * (i + 1) / max(1, len(items))
+            # advance beat_pos proportionally to avoid cascading fallback
+            beat_pos = int(len(sp_tokens) * (i + 1) / max(1, len(items)))
             print(f"[tts] WARNING: beat {beat} text not found in word stream (numerals?) - proportional span", flush=True)
         timed.append({**b, "spoken": spoken[beat], "start": start, "sec": end - start,
                       "words": [w for w in words if start <= w["t"] < end]})

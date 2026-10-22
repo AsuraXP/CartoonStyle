@@ -59,61 +59,38 @@ def num2words_en(n: int) -> str:
 def norm_words(text: str) -> list[str]:
     """Tokens for matching: numerals expanded the way TTS speaks them."""
     def repl(m: re.Match) -> str:
-        return num2words_en(int(m.group(0).replace(",", "")))
-    text = re.sub(r"\d[\d,]*", repl, text)
+        raw = m.group(0).replace(",", "")
+        n = int(raw.rstrip("s"))
+        if raw.endswith("s"):
+            # Decades: "1980s" -> "nineteen eighties", "80s" -> "eighties"
+            if n >= 1000:
+                hi, lo = n // 100, n % 100
+                return num2words_en(hi) + " " + _TENS[lo // 10].rstrip("y") + "ies"
+            elif 20 <= n < 100:
+                return _TENS[n // 10].rstrip("y") + "ies"
+            return num2words_en(n)
+        return num2words_en(n)
+    text = re.sub(r"\d[\d,]*s?", repl, text)
     return re.findall(r"[a-z0-9]+", text.lower())
-
-
-# All tokens that could appear from numeral expansion (so we can strip them for
-# fuzzy matching - edge-tts number pronunciation can differ slightly from our
-# prediction, causing exact-subseq match to fail on years/decades like "1980s").
-_NUM_WORDS = {"zero","one","two","three","four","five","six","seven","eight","nine",
-              "ten","eleven","twelve","thirteen","fourteen","fifteen","sixteen",
-              "seventeen","eighteen","nineteen","twenty","thirty","forty","fifty",
-              "sixty","seventy","eighty","ninety","hundred","thousand","million",
-              "billion","oh","point"}
-
-
-def _strip_numbers(toks: list[str]) -> list[str]:
-    return [t for t in toks if t not in _NUM_WORDS]
-
-
-def find_subseq_fuzzy(needle: list[str], hay: list[str], start: int = 0) -> int | None:
-    """Fuzzy subsequence match: strip number-word tokens from both sides, then
-    find needle content-words as a contiguous subsequence in hay. Returns the
-    index in the ORIGINAL hay (before stripping) of the first matched token."""
-    cn = _strip_numbers(needle)
-    if not cn:
-        return start
-    # Build mapping: stripped-index -> original-index in hay
-    h_keep_idx: list[int] = []
-    h_stripped: list[str] = []
-    for i, t in enumerate(hay):
-        if t not in _NUM_WORDS:
-            h_keep_idx.append(i)
-            h_stripped.append(t)
-    # find subseq in stripped hay starting from the first keep-idx >= start
-    start_ki = 0
-    for ki, oi in enumerate(h_keep_idx):
-        if oi >= start:
-            start_ki = ki
-            break
-    n = len(cn)
-    for i in range(start_ki, len(h_stripped) - n + 1):
-        if h_stripped[i:i+n] == cn:
-            return h_keep_idx[i]  # original index in hay
-    return None
 
 
 def norm_variants(text: str) -> list[list[str]]:
     """Token variants to try: quantity-style first, then year-style (1840 ->
-    'eighteen forty'), since TTS pronunciation depends on context."""
+    'eighteen forty'), since TTS pronunciation depends on context. Handles
+    decades (1980s -> 'nineteen eighties')."""
     v1 = norm_words(text)
     out = [v1]
 
     def year_repl(m: re.Match) -> str:
-        n = int(m.group(0).replace(",", ""))
-        if 1000 <= n <= 1999:
+        raw = m.group(0).replace(",", "")
+        n = int(raw.rstrip("s"))
+        is_decade = raw.endswith("s")
+        if is_decade and 1000 <= n <= 1999:
+            hi, lo = n // 100, n % 100
+            return num2words_en(hi) + " " + _TENS[lo // 10].rstrip("y") + "ies"
+        if is_decade and 20 <= n < 100:
+            return _TENS[n // 10].rstrip("y") + "ies"
+        if 1000 <= n <= 1999 and not is_decade:
             hi, lo = n // 100, n % 100
             if lo == 0:
                 return num2words_en(hi) + " hundred"
@@ -122,7 +99,7 @@ def norm_variants(text: str) -> list[list[str]]:
             return num2words_en(hi) + " " + num2words_en(lo)
         return num2words_en(n)
 
-    t2 = re.sub(r"\d[\d,]*", year_repl, text)
+    t2 = re.sub(r"\d[\d,]*s?", year_repl, text)
     v2 = re.findall(r"[a-z0-9]+", t2.lower())
     if v2 != v1:
         out.append(v2)
@@ -239,77 +216,17 @@ def main() -> None:
     sp_times.append(total)
 
     timed = []
-    # Strategy: find anchor starts via unique phrase match (global search), then
-    # distribute remaining time proportionally by word count. This is robust
-    # against edge-tts tokenization differences (contractions, number pronunciations)
-    # that break strict subsequence matching.
-    beat_wc = {int(b["beat"]): len(strip_sfx(b["text"]).split()) for b in items}
-    total_wc = sum(beat_wc.values())
-
-    # First pass: collect all successful matches
-    anchor_starts: dict[int, float] = {}
-    for b in items:
+    for i, b in enumerate(items):
         beat = int(b["beat"])
-        hit = None
-        for variant in norm_variants(spoken[beat]):
-            idx = find_subseq_fuzzy(variant, sp_tokens, 0)
-            if idx is not None:
-                if hit is None or idx < hit[0]:
-                    hit = (idx, len(_strip_numbers(variant)))
-        if hit is None:
-            hit = match_first(norm_variants(spoken[beat]), sp_tokens, 0)
+        hit = match_first(norm_variants(spoken[beat]), sp_tokens)
         if hit is not None:
-            idx, _ = hit
-            anchor_starts[beat] = sp_times[idx]
-
-    # Always anchor beat 1 at 0 and end at total
-    anchor_starts[1] = 0.0
-
-    # Compute start/end for each beat: walk forward from anchors, filling gaps
-    # proportionally by word count
-    items_by_id = {int(b["beat"]): b for b in items}
-    beat_ids = sorted(items_by_id.keys())
-    items_sorted = sorted(items, key=lambda x: int(x["beat"]))
-    anchors_sorted = sorted(anchor_starts.items())
-    if max(beat_ids) not in anchor_starts:
-        anchor_starts[max(beat_ids)] = total - (total_wc - beat_wc[max(beat_ids)]) / total_wc * total * 0.05  # rough near end
-
-    # Walk through and compute times
-    # Pair up anchors: between anchor_i (beat bi, time ti) and anchor_j (beat bj, time tj),
-    # distribute intermediate beats by word count
-    anchor_list = sorted(anchor_starts.items())
-    # Insert end anchor
-    anchor_list.append((max(beat_ids) + 1, total))
-
-    beat_times: dict[int, tuple[float, float]] = {}
-    for a_idx in range(len(anchor_list) - 1):
-        bi, ti = anchor_list[a_idx]
-        bj, tj = anchor_list[a_idx + 1]
-        if bi == bj:
-            continue
-        # Beats in the span [bi, bj): starts with bi (known), ends before bj (known)
-        span_beats = [bid for bid in beat_ids if bi <= bid < bj]
-        if not span_beats:
-            continue
-        span_wc = sum(beat_wc[bid] for bid in span_beats)
-        span_dur = tj - ti
-        cur = ti
-        for k, bid in enumerate(span_beats):
-            if bid == bi and bid in anchor_starts and k == 0:
-                start = cur
-            else:
-                start = cur
-            if k == len(span_beats) - 1:
-                end = tj
-            else:
-                end = start + (beat_wc[bid] / span_wc) * span_dur
-            beat_times[bid] = (start, end)
-            cur = end
-
-    for b in items_sorted:
-        beat = int(b["beat"])
-        start, end = beat_times.get(beat, (total * (int(b["beat"]) - 1) / len(items), total * int(b["beat"]) / len(items)))
-        print(f"[tts] beat {beat:02d}: start={start:.2f}s end={end:.2f}s dur={end-start:.1f}s ({beat_wc[beat]} words)", flush=True)
+            idx, nlen = hit
+            start = sp_times[idx]
+            end = sp_times[min(idx + nlen, len(sp_times) - 1)]
+        else:
+            frac = i / max(1, len(items))
+            start, end = total * frac, total * (i + 1) / max(1, len(items))
+            print(f"[tts] WARNING: beat {beat} text not found in word stream (numerals?) - proportional span", flush=True)
         timed.append({**b, "spoken": spoken[beat], "start": start, "sec": end - start,
                       "words": [w for w in words if start <= w["t"] < end]})
 
@@ -359,25 +276,36 @@ def main() -> None:
             toks, ts = stream_tokens(b["words"])
             toks_raw = [re.findall(r"[a-z0-9]+", w["w"].lower()) for w in b["words"]]
             ts_raw = [w["t"] for w in b["words"]]
-            # Distribute moment times PROPORTIONALLY by word count within the
-            # beat. This is robust against edge-tts tokenization differences.
-            moment_wc = [len(m["moment_text"].split()) for m in ms]
-            beat_wc_total = sum(moment_wc)
-            beat_start = b["start"]
-            beat_dur = b["sec"]
-            cur = beat_start
-            for k, m in enumerate(ms):
-                if k == len(ms) - 1:
-                    sec = beat_start + beat_dur - cur
+            desired: list[float] = []
+            pos = 0
+            lead = 0.0
+            for m in ms:
+                hit = match_first(norm_variants(m["moment_text"]), toks, pos)
+                if hit is not None:
+                    idx, nlen = hit
+                    desired.append(ts[idx])
+                    pos = idx + nlen
                 else:
-                    sec = (moment_wc[k] / beat_wc_total) * beat_dur
-                st = cur
-                cur += sec
-                sid = str(m["slide_id"]).zfill(2)
-                mom = str(m.get("moment") or k + 1).zfill(2)
+                    missed += 1
+                    print(f"[tts] WARNING: moment beat{int(m['slide_id']):02d}m{int(m.get('moment') or 0):02d} "
+                          f"words not in speech: {m['moment_text']!r} - lead-in slot", flush=True)
+                    desired.append(b["start"] + lead)
+                    lead += 1.2
+            order = sorted(range(len(ms)), key=lambda j: (desired[j], j))
+            tiled = []
+            run = b["start"]
+            for pos2, j in enumerate(order):
+                nxt = desired[order[pos2 + 1]] if pos2 + 1 < len(order) else b["start"] + b["sec"]
+                if nxt <= run:
+                    nxt = run + 0.4
+                tiled.append((j, run, nxt - run))
+                run = nxt
+            for j, st, sec in tiled:
+                sid = str(ms[j]["slide_id"]).zfill(2)
+                mom = str(ms[j].get("moment") or j + 1).zfill(2)
                 moments.append({"key": f"beat{sid}m{mom}", "beat": beat,
                                 "start": round(st, 3), "sec": round(sec, 3),
-                                "text": m["moment_text"]})
+                                "text": ms[j]["moment_text"]})
         (out_dir / "moments_timing.json").write_text(json.dumps(moments, indent=1), encoding="utf-8")
         status = "OK" if missed == 0 else f"{missed} MISSED - CHECK WARNINGS ABOVE"
         print(f"[tts] {len(moments)} image moments locked to spoken words -> moments_timing.json [{status}]",

@@ -64,6 +64,47 @@ def norm_words(text: str) -> list[str]:
     return re.findall(r"[a-z0-9]+", text.lower())
 
 
+# All tokens that could appear from numeral expansion (so we can strip them for
+# fuzzy matching - edge-tts number pronunciation can differ slightly from our
+# prediction, causing exact-subseq match to fail on years/decades like "1980s").
+_NUM_WORDS = {"zero","one","two","three","four","five","six","seven","eight","nine",
+              "ten","eleven","twelve","thirteen","fourteen","fifteen","sixteen",
+              "seventeen","eighteen","nineteen","twenty","thirty","forty","fifty",
+              "sixty","seventy","eighty","ninety","hundred","thousand","million",
+              "billion","oh","point"}
+
+
+def _strip_numbers(toks: list[str]) -> list[str]:
+    return [t for t in toks if t not in _NUM_WORDS]
+
+
+def find_subseq_fuzzy(needle: list[str], hay: list[str], start: int = 0) -> int | None:
+    """Fuzzy subsequence match: strip number-word tokens from both sides, then
+    find needle content-words as a contiguous subsequence in hay. Returns the
+    index in the ORIGINAL hay (before stripping) of the first matched token."""
+    cn = _strip_numbers(needle)
+    if not cn:
+        return start
+    # Build mapping: stripped-index -> original-index in hay
+    h_keep_idx: list[int] = []
+    h_stripped: list[str] = []
+    for i, t in enumerate(hay):
+        if t not in _NUM_WORDS:
+            h_keep_idx.append(i)
+            h_stripped.append(t)
+    # find subseq in stripped hay starting from the first keep-idx >= start
+    start_ki = 0
+    for ki, oi in enumerate(h_keep_idx):
+        if oi >= start:
+            start_ki = ki
+            break
+    n = len(cn)
+    for i in range(start_ki, len(h_stripped) - n + 1):
+        if h_stripped[i:i+n] == cn:
+            return h_keep_idx[i]  # original index in hay
+    return None
+
+
 def norm_variants(text: str) -> list[list[str]]:
     """Token variants to try: quantity-style first, then year-style (1840 ->
     'eighteen forty'), since TTS pronunciation depends on context."""
@@ -199,28 +240,25 @@ def main() -> None:
 
     timed = []
     beat_pos = 0  # search forward sequentially so beats don't re-match earlier words
-    FUZZ = 15  # allow up to 15 tokens of drift for tokenization differences
     for i, b in enumerate(items):
         beat = int(b["beat"])
         hit = None
-        # Search from max(0, beat_pos - FUZZ) to handle small tokenization
-        # differences between norm_words prediction and what edge-tts
-        # actually emits (apostrophes, number expansion, hyphenation).
-        search_from = max(0, beat_pos - FUZZ)
+        # Fuzzy match first (strips number words) - robust against edge-tts
+        # number expansion differences ("eighties" vs "eighty s" etc.)
         for variant in norm_variants(spoken[beat]):
-            idx = find_subseq(variant, sp_tokens, search_from)
+            idx = find_subseq_fuzzy(variant, sp_tokens, beat_pos)
             if idx is not None:
                 if hit is None or idx < hit[0]:
-                    hit = (idx, len(variant))
+                    hit = (idx, len(_strip_numbers(variant)))
         if hit is None:
-            # Try with no fuzz window
+            # Fallback to exact match with fuzz
+            search_from = max(0, beat_pos - 15)
             for variant in norm_variants(spoken[beat]):
-                idx = find_subseq(variant, sp_tokens, beat_pos)
+                idx = find_subseq(variant, sp_tokens, search_from)
                 if idx is not None:
                     if hit is None or idx < hit[0]:
                         hit = (idx, len(variant))
         if hit is None:
-            # Last resort: global search (e.g. beat11 after long fallback stretch)
             for variant in norm_variants(spoken[beat]):
                 idx = find_subseq(variant, sp_tokens, 0)
                 if idx is not None:
@@ -229,11 +267,12 @@ def main() -> None:
         if hit is not None:
             idx, nlen = hit
             start = sp_times[idx]
-            # end time = time of LAST matched token (idx + nlen - 1), not one past
-            end_idx = min(idx + nlen - 1, len(sp_times) - 1)
+            # Find end: scan forward from idx until we've consumed ~enough tokens
+            # (fuzzy match only counts content-word tokens, so we approximate end)
+            end_idx = min(idx + len(norm_words(spoken[beat])) - 1, len(sp_times) - 1)
             end = sp_times[end_idx] if end_idx > idx else start + 1.0
-            beat_pos = idx + nlen
-            print(f"[tts] beat {beat:02d}: matched at word idx {idx} start={start:.2f}s end={end:.2f}s (len={nlen})", flush=True)
+            beat_pos = idx + len(norm_words(spoken[beat]))
+            print(f"[tts] beat {beat:02d}: matched at word idx {idx} start={start:.2f}s end={end:.2f}s", flush=True)
         else:
             frac = i / max(1, len(items))
             start, end = total * frac, total * (i + 1) / max(1, len(items))
@@ -292,11 +331,19 @@ def main() -> None:
             pos = 0
             lead = 0.0
             for m in ms:
-                hit = match_first(norm_variants(m["moment_text"]), toks, pos)
+                hit = None
+                # Try fuzzy first (number-insensitive), then exact
+                for variant in norm_variants(m["moment_text"]):
+                    idx = find_subseq_fuzzy(variant, toks, pos)
+                    if idx is not None:
+                        if hit is None or idx < hit[0]:
+                            hit = (idx, len(_strip_numbers(variant)))
+                if hit is None:
+                    hit = match_first(norm_variants(m["moment_text"]), toks, pos)
                 if hit is not None:
                     idx, nlen = hit
                     desired.append(ts[idx])
-                    pos = idx + nlen
+                    pos = idx + max(nlen, 1)
                 else:
                     missed += 1
                     print(f"[tts] WARNING: moment beat{int(m['slide_id']):02d}m{int(m.get('moment') or 0):02d} "

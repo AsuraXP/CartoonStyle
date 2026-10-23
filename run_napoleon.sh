@@ -1,44 +1,21 @@
 #!/bin/bash
 # One-shot runner for Napoleon Complex video.
 # Usage: bash run_napoleon.sh
+# Native frame resolution (1376x768), zero stretching/cropping/letterboxing.
 # Stops on first error and prints what went wrong.
 set -e
 
 VIDEO_DIR="examples/napoleon_complex_video"
 FRAMES="$VIDEO_DIR/frames"
 
-echo "=== [1/6] Installing dependencies ==="
+echo "=== [1/5] Installing dependencies ==="
 pip install -q edge-tts
-apt-get -qq update
-apt-get -qq install -y ffmpeg imagemagick
-# Ensure ImageMagick policy allows PNG writes (some distros restrict it)
-if [ -f /etc/ImageMagick-6/policy.xml ]; then
-    sed -i 's/<policy domain="coder" rights="none" pattern="PNG" \/>/<policy domain="coder" rights="read|write" pattern="PNG" \/>/' /etc/ImageMagick-6/policy.xml || true
-fi
+which ffmpeg >/dev/null || (apt-get -qq update && apt-get -qq install -y ffmpeg)
 
-echo "=== [2/6] Resizing all frames to 1920x1080 ==="
-# Try mogrify first; fall back to Pillow if not available
-if command -v mogrify >/dev/null 2>&1; then
-    mogrify -resize 1920x1080! "$FRAMES"/*.png
-else
-    echo "(mogrify not found - using Pillow fallback)"
-    pip install -q Pillow
-    FRAMES="$FRAMES" python -c '
-from PIL import Image
-import glob, os
-frames_dir = os.environ["FRAMES"]
-paths = sorted(glob.glob(os.path.join(frames_dir, "*.png")))
-for p in paths:
-    img = Image.open(p).convert("RGB").resize((1920,1080), Image.LANCZOS)
-    img.save(p)
-print(f"Resized {len(paths)} frames to 1920x1080")
-'
-fi
-
-echo "=== [3/6] CSV -> beats.jsonl ==="
+echo "=== [2/5] CSV -> beats.jsonl ==="
 python -m cartoonstyle.csv_to_beats --visuals "$VIDEO_DIR/visuals.csv" --out "$VIDEO_DIR/beats.jsonl"
 
-echo "=== [4/6] TTS (AndrewNeural -5%) ==="
+echo "=== [3/5] TTS (AndrewNeural -5%) ==="
 python -m cartoonstyle.tts \
     --beats "$VIDEO_DIR/beats.jsonl" \
     --out-dir "$VIDEO_DIR" \
@@ -46,7 +23,7 @@ python -m cartoonstyle.tts \
     --rate=-5% \
     --visuals "$VIDEO_DIR/visuals.csv" 2>&1 | tee /tmp/tts_log.txt
 
-# Check for the OK status before proceeding (tts.py prints "[OK]" at end of that line)
+# Safety check
 if ! grep -q "moments locked.*\[OK\]" /tmp/tts_log.txt; then
     echo ""
     echo "!!! TTS DID NOT LOCK ALL MOMENTS — stopping here. !!!"
@@ -54,14 +31,14 @@ if ! grep -q "moments locked.*\[OK\]" /tmp/tts_log.txt; then
     exit 1
 fi
 
-echo "=== [5/6] Stitching VIDEO.mp4 ==="
+echo "=== [4/5] Stitching VIDEO.mp4 (native res, no scaling) ==="
 python -m cartoonstyle.stitch \
     --timing "$VIDEO_DIR/beats_with_timing.json" \
     --images-dir "$FRAMES" \
     --out "$VIDEO_DIR/VIDEO.mp4" \
     --pick 0
 
-echo "=== [6/6] Packaging deliverable zip ==="
+echo "=== [5/5] Packaging deliverable zip ==="
 rm -f napoleon_complex_DELIVERABLE.zip
 zip -j napoleon_complex_DELIVERABLE.zip \
     "$VIDEO_DIR/VIDEO.mp4" \

@@ -46,11 +46,11 @@ python -m cartoonstyle.tts \
     --rate=-5% \
     --visuals "$VIDEO_DIR/visuals.csv" 2>&1 | tee /tmp/tts_log.txt
 
-# Check for the magic [OK] line before proceeding
-if ! grep -q "\[OK\] 120/120 moments locked" /tmp/tts_log.txt; then
+# Check for the OK status before proceeding (tts.py prints "[OK]" at end of that line)
+if ! grep -q "moments locked.*\[OK\]" /tmp/tts_log.txt; then
     echo ""
-    echo "!!! TTS DID NOT LOCK ALL 120 MOMENTS — stopping here. !!!"
-    echo "!!! Paste the output above back to the assistant.     !!!"
+    echo "!!! TTS DID NOT LOCK ALL MOMENTS — stopping here. !!!"
+    echo "!!! Paste the output above back to the assistant. !!!"
     exit 1
 fi
 

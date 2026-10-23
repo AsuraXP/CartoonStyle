@@ -43,6 +43,7 @@ def beat_segment(cmd_base: list[str], work: Path, beat: int, entries: list[tuple
     seg = work / f"seg{beat:02d}.mp4"
     subprocess.run(cmd_base + ["-f", "concat", "-safe", "0", "-i", str(lst),
                                "-i", str(audio),
+                               "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1",
                                "-c:v", "libx264", "-tune", "stillimage", "-r", "30",
                                "-c:a", "aac", "-b:a", "192k",
                                "-pix_fmt", "yuv420p", "-shortest", str(seg)],
@@ -161,16 +162,17 @@ def main() -> None:
             lines.append(f"file '{img}'\nduration {sec:.3f}\n")
         lines.append(f"file '{entries[-1][0]}'\n")
         lst.write_text("".join(lines), encoding="utf-8")
-        vopts = []
+        vopts = ["-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1"]
         if args.captions:
             font_path = Path(args.font) if args.font else Path("Montserrat.ttf")
             family = (font_path.stem.split("[")[0].split("-")[0].strip() or "Montserrat")
+            scale_pad = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1"
             if font_path.exists():
                 fontsdir = str(font_path.parent.resolve())
-                vopts = ["-vf", f"ass={work / 'captions.ass'}:fontsdir={fontsdir}"]
+                vopts = ["-vf", f"{scale_pad},ass={work / 'captions.ass'}:fontsdir={fontsdir}"]
             else:
                 print("[stitch] WARNING: font file missing - captions use system default sans", flush=True)
-                vopts = ["-vf", f"ass={work / 'captions.ass'}"]
+                vopts = ["-vf", f"{scale_pad},ass={work / 'captions.ass'}"]
             write_ass(moments, work / "captions.ass", family)
         aopts = [] if args.no_loudnorm else ["-af", "loudnorm=I=-14:TP=-1.5:LRA=11"]
         subprocess.run(cmd_base + ["-f", "concat", "-safe", "0", "-i", str(lst),

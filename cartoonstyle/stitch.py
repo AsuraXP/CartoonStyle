@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from PIL import Image, ImageDraw, ImageFont
 
 
 def find_image(images_dir: str, key: str, pick: int, fallback_dir: str | None) -> str | None:
@@ -77,6 +78,59 @@ def caption_events(m: dict, max_words: int = 5) -> list[tuple[float, float, str]
     return evts
 
 
+def pil_burn_captions(entries: list[tuple[str, float]], moments: list[dict],
+                      font_path: Path, out_dir: Path,
+                      size: int = 58, res_w: int = 1920, res_h: int = 1080,
+                      max_words: int = 5, margin_v: int = 90) -> list[tuple[str, float]]:
+    """Fallback caption burner: render captions directly onto each image with PIL.
+    Robust — no libass/fontconfig dependency. Uses same chunking as ASS path.
+    Returns the new list of (image_path, duration) entries pointing at caption-burned copies.
+    """
+    try:
+        font = ImageFont.truetype(str(font_path), size) if font_path.exists() else ImageFont.load_default()
+    except Exception:
+        font = ImageFont.load_default()
+    line_h = size + 14
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Build caption events grouped by image index in entry order
+    evts: list[list[str]] = [[] for _ in entries]
+    # entries are sorted by start time, one per moment
+    t = 0.0
+    for i, (_img, sec) in enumerate(entries):
+        m = moments[i] if i < len(moments) else None
+        lines_for_this: list[str] = []
+        if m:
+            for _a, _b, txt in caption_events(m, max_words):
+                lines_for_this.append(txt)
+        evts[i] = lines_for_this
+        t += sec
+
+    new_entries = []
+    for i, (img_p, sec) in enumerate(entries):
+        src = Image.open(img_p).convert("RGB").resize((res_w, res_h), Image.LANCZOS)
+        lines = evts[i]
+        if lines:
+            overlay = Image.new("RGBA", (res_w, line_h * len(lines) + 48), (0, 0, 0, 150))
+            total_h = overlay.height
+            bar_y = res_h - margin_v - total_h
+            src.paste(overlay, (0, bar_y), overlay)
+            draw = ImageDraw.Draw(src)
+            y = bar_y + 24
+            for line in lines:
+                bb = draw.textbbox((0, 0), line, font=font)
+                tw = bb[2] - bb[0]
+                x = (res_w - tw) // 2
+                draw.text((x + 2, y + 2), line, font=font, fill=(0, 0, 0))
+                draw.text((x, y), line, font=font, fill=(255, 255, 255))
+                y += line_h
+        out_p = out_dir / f"cap_{i:04d}.png"
+        src.save(out_p, "PNG", optimize=True)
+        new_entries.append((str(out_p), sec))
+    print(f"[stitch] PIL caption burn -> {len(new_entries)} frames in {out_dir}", flush=True)
+    return new_entries
+
+
 def write_ass(moments: list[dict], out: Path, font_name: str, size: int = 58) -> Path:
     """Word-locked captions: white sans, dark outline, bottom-center, 1920x1080."""
     head = (
@@ -110,7 +164,9 @@ def main() -> None:
     p.add_argument("--fallback-dir", default="")
     p.add_argument("--fps", type=int, default=30)
     p.add_argument("--captions", action="store_true", help="burn word-locked subtitles")
-    p.add_argument("--font", default="", help="path to Montserrat.ttf (any sans .ttf)")
+    p.add_argument("--caption-method", choices=["ass", "pil", "auto"], default="auto",
+                   help="ass = libass (best looking), pil = Pillow (no libass deps), auto = try ass then pil")
+    p.add_argument("--font", default="", help="path to a bold sans .ttf (e.g. Inter-Bold.ttf)")
     p.add_argument("--no-loudnorm", action="store_true", help="skip -14 LUFS normalization")
     p.add_argument("--qc", default="", help="qc.jsonl from cartoonstyle.qc - auto-picks the best candidate per moment")
     args = p.parse_args()
@@ -161,26 +217,60 @@ def main() -> None:
             lines.append(f"file '{img}'\nduration {sec:.3f}\n")
         lines.append(f"file '{entries[-1][0]}'\n")
         lst.write_text("".join(lines), encoding="utf-8")
-        vopts = []
+        def run_encode(ent: list[tuple[str, float]], vf: list[str]):
+            lst2 = work / "all_active.txt"
+            lines2 = []
+            for img, sec in ent:
+                lines2.append(f"file '{img}'\nduration {sec:.3f}\n")
+            lines2.append(f"file '{ent[-1][0]}'\n")
+            lst2.write_text("".join(lines2), encoding="utf-8")
+            subprocess.run(cmd_base + ["-f", "concat", "-safe", "0", "-i", str(lst2),
+                                       "-i", str(narr),
+                                       *vf,
+                                       "-c:v", "libx264", "-tune", "stillimage", "-r", "30",
+                                       *aopts,
+                                       "-c:a", "aac", "-b:a", "192k",
+                                       "-pix_fmt", "yuv420p", "-shortest", args.out],
+                           check=True, capture_output=True)
+
+        aopts = [] if args.no_loudnorm else ["-af", "loudnorm=I=-14:TP=-1.5:LRA=11"]
+
+        use_pil = args.caption_method == "pil"
+        use_ass = args.captions and args.caption_method in ("ass", "auto")
+
         if args.captions:
             font_path = Path(args.font) if args.font else Path("Montserrat.ttf")
             family = (font_path.stem.split("[")[0].split("-")[0].strip() or "Montserrat")
-            if font_path.exists():
-                fontsdir = str(font_path.parent.resolve())
-                vopts = ["-vf", f"ass={work / 'captions.ass'}:fontsdir={fontsdir}"]
-            else:
-                print("[stitch] WARNING: font file missing - captions use system default sans", flush=True)
-                vopts = ["-vf", f"ass={work / 'captions.ass'}"]
-            write_ass(moments, work / "captions.ass", family)
-        aopts = [] if args.no_loudnorm else ["-af", "loudnorm=I=-14:TP=-1.5:LRA=11"]
-        subprocess.run(cmd_base + ["-f", "concat", "-safe", "0", "-i", str(lst),
-                                   "-i", str(narr),
-                                   *vopts,
-                                   "-c:v", "libx264", "-tune", "stillimage", "-r", "30",
-                                   *aopts,
-                                   "-c:a", "aac", "-b:a", "192k",
-                                   "-pix_fmt", "yuv420p", "-shortest", args.out],
-                       check=True, capture_output=True)
+
+        ass_ok = False
+        if use_ass:
+            try:
+                if font_path.exists():
+                    fontsdir = str(font_path.parent.resolve())
+                    vopts = ["-vf", f"ass={work / 'captions.ass'}:fontsdir={fontsdir}"]
+                else:
+                    print("[stitch] WARNING: font file missing - captions use system default sans", flush=True)
+                    vopts = ["-vf", f"ass={work / 'captions.ass'}"]
+                write_ass(moments, work / "captions.ass", family)
+                run_encode(entries, vopts)
+                ass_ok = True
+            except subprocess.CalledProcessError as e:
+                print(f"[stitch] ASS/libass encode failed ({e.returncode}) — falling back to PIL captions", flush=True)
+                if e.stderr:
+                    print(e.stderr.decode(errors="replace")[-400:], flush=True)
+            except Exception as e:
+                print(f"[stitch] ASS setup failed ({e}) — falling back to PIL captions", flush=True)
+
+        if args.captions and not ass_ok:
+            pil_dir = work / "pil_captioned"
+            cap_entries = pil_burn_captions(entries, moments,
+                                            font_path if font_path.exists() else Path("/nonexistent"),
+                                            pil_dir)
+            vopts = []  # captions already burned into images
+            run_encode(cap_entries, vopts)
+        elif not args.captions:
+            run_encode(entries, [])
+
         print(f"[stitch] VIDEO -> {args.out}  ({len(entries)} word-locked images, one narration take)", flush=True)
         return
 

@@ -2,23 +2,30 @@
 Reference this at the START of every prompt. Drift = bug frames = QC failures.
 
 ## ART STYLE (LOCKED)
-- HIGH-CONTRAST BLACK AND WHITE INK-WASH, like a Walking Dead comic panel.
-- Rough hand-drawn ink lines, heavy black shadows, ink-splat texture, gritty.
+- HIGH-CONTRAST BLACK AND WHITE INK-WASH, like a CGP Grey stick figure drawn IN a Walking Dead comic world.
+- **THE CHARACTERS THEMSELVES ARE CLEAN MINIMALIST STICK FIGURES (white round head, stick limbs, dot eyes, red flat t-shirt for MC) — they should look like CGP Grey characters placed INTO a detailed inkwash environment.**
+- Rough hand-drawn ink lines, heavy black shadow blocks, minimal ink-splat texture, gritty backgrounds — BUT the character rendering stays SIMPLE AND CLEAN (stick figures, not detailed comic-book people).
+- **This distinction is critical: backgrounds can be detailed ink comic style. FIGURES must always be simple stick figures.**
 - **BLOOD RED is the ONLY color accent.** Everything else is black/white/grey.
 - Red appears ONLY for: MC's t-shirt, blood, neon OPEN sign, clock hands at the end, ketchup bottle, warning labels, the sticker smiley, the burrito is NOT red, zombies are NOT green, car lights are white/grey, streetlight is orange-yellow grey (NOT vivid red).
 - 16:9, no onomatopoeia text, no captions, no watermarks.
 
 ## MC ANATOMY (LOCKED — NO DRIFT)
-- MINIMALIST STICK FIGURE: round WHITE head, two simple BLACK dot eyes, simple black mouth line.
-- Body: thin BLACK STICK LINES for arms and legs.
-- **NO colored pants, NO brown trousers, NO jeans** — legs are always plain black stick lines.
-- He wears a BRIGHT RED SHORT-SLEEVED T-SHIRT (shirt is his signature, always red).
-- He starts with a WHITE PAPER APRON slung over one shoulder — he takes it off in beat01m04. After that, no apron.
-- He never wears shoes (stick figure feet implied).
-- EMOTIONS: wide eyes = terror, half-mouth-smile = dark comedy beat, blank stare = shock.
+- **ALL CHARACTERS (MC, zombies, driver, soldier types) ARE MINIMALIST STICK FIGURES** — same simple style as CGP Grey.
+  - Round featureless WHITE HEAD (no detailed face, no hair, no nose, no cheekbones, no wrinkles).
+  - Two simple BLACK DOT EYES, a simple black line mouth — that is the ENTIRE face.
+  - Thin black stick lines for arms and legs. NO MUSCLES, NO HANDS WITH FINGERS DRAWN (stick hands are simple black lines or small nubs, NO detailed knuckles/wrinkles).
+  - NO JEANS, NO SHOES, NO colored pants, NO clothing folds or fabric texture on limbs — legs are always plain black stick lines.
+  - MC wears a SOLID FLAT BRIGHT RED SHORT-SLEEVED T-SHIRT (shirt is his signature, always red, flat color no shading/wrinkles).
+- MC starts with a plain WHITE PAPER APRON (flat, simple) over one shoulder, taken off in beat01m04. After that, no apron.
+- Zombies are ALSO stick figures with the SAME head/body anatomy but: grey tint hint on skin, MILKY WHITE eyes (pupils erased/empty), ragged clothing indicated by jagged shirt edges (still flat stick style, not detailed fabric), and red blood SPLOTCHES (small, stylized, not graphic drips).
+- **NEVER render a character with photorealistic/realistic facial features, hair, hands, muscles, or clothing folds. If it has fingers with knuckles — it's wrong. If it has spiky hair — it's wrong. If it has jean wrinkles — it's wrong.**
+- EMOTIONS: wide dot eyes = terror, half-line smile = dark comedy beat, blank stare = shock, sweat drops drawn as small black teardrops near head.
 
 ## STORE LAYOUT (LOCKED — SINGLE STORY)
 - Single-story American STOP-N-GO gas station convenience store. One floor. No stairs.
+- **CLEAN OPERATING STORE at the START** (beats 01-10): shelves are neat, products neatly arranged, white/light tile floors, register clean (no ink-grime, no splatters, no abandoned boxes, no grime). It's a normal Tuesday night shift, not a horror set yet.
+- **Grime/ink-splat level stays MINIMAL** — style is bold ink lines and shadow blocks, NOT "abandoned building" texture. The store doesn't become dirty/ruined until after the horde hits (beat11+). No spattered ink on clean floors, no cardboard boxes scattered around at start, no dark mysterious doorways.
 - FRONT: big plate-glass windows across the whole facade + one glass door with push-bar handle and deadbolt + metal drop-down security bar. Red neon OPEN sign above door.
 - INSIDE FRONT: REGISTER COUNTER runs across the right side. Behind counter: cigarette rack wall, hot dog roller grill, cash register, baseball bat propped behind counter (with "WORLD'S OKAYEST MANAGER" sticker), EMERGENCY RADIO under counter, phone.
 - MIDDLE: aisles of snacks/chips/drinks, slushie machine, soda coolers along one wall.

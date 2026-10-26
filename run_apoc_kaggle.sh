@@ -132,7 +132,7 @@ python -m cartoonstyle.stitch \
     --out "$VIDEO_DIR/VIDEO.mp4" \
     --pick 0 \
     --captions \
-    --caption-method auto \
+    --caption-method pil \
     $FONT_PATH_ARG
 
 echo ""

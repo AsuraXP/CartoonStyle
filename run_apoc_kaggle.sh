@@ -14,8 +14,6 @@ WORK=/kaggle/working
 REPO=$WORK/CartoonStyle
 VIDEO_DIR=$REPO/examples/apoc_day1_video
 FRAMES=$VIDEO_DIR/frames
-FONT_URL="https://github.com/rsms/inter/raw/master/docs/font-files/Inter-Bold.ttf"
-FONT_PATH=$WORK/Inter-Bold.ttf
 
 echo "=== [1/7] Grabbing ffmpeg + pip deps ==="
 if ! which ffmpeg >/dev/null 2>&1; then

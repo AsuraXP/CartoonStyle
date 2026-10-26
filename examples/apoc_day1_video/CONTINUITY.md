@@ -53,11 +53,15 @@ MC's position by beat:
 ## ZOMBIE RULES
 - FAST sprinters — 28 Days Later style, NOT slow groaners.
 - Run with heads DOWN at ~45 degrees, arms pumping like runners, mouths open snarling.
-- MILKY WHITE EYES, skin grey in B&W.
-- Clothing: torn ragged shirts, bare feet sometimes, various wounds.
-- BLOOD rendered IN RED, the only other color.
-- They NEVER get inside the store in Day 1 (locked glass holds). They are always OUTSIDE pressing against glass/windows.
-- The infected delivery driver is INSIDE the WALK-IN COOLER (separated by glass + door), NOT in the main store.
+- MILKY WHITE EYES (empty white dots, no pupil), stick figures like MC but with ragged jagged-edged shirts (no detailed fabric, just jagged line edges). NO JEANS, NO SHOES — legs are plain black stick lines same as MC.
+- ZOMBIES ARE STICK FIGURES TOO — same round white heads, same black stick limbs. The ONLY differences from MC: (1) milky white empty eyes instead of black dot eyes, (2) ragged jagged shirt edges instead of clean t-shirt, (3) some have small stylized red blood blotches on their shirts. Never detailed skull faces, never grey-skinned monster heads, never bones/teeth close-ups.
+- BLOOD rendered IN RED, stylized splatter/blotches (no drips, no wounds).
+- **ZOMBIES ARE ALWAYS OUTSIDE.** To guarantee this compositionally in every "zombies pressed against glass" shot:
+  - Frame the shot FROM OUTSIDE the store looking IN (we see the store interior/shelves/fluorescent ceiling THROUGH the glass), OR
+  - Frame it from inside looking out but show the zombies' FEET standing on the SIDEWALK outside (concrete line is visible), hands clearly pressed against the OUTSIDE surface with their bodies beyond the glass plane, NOT against the camera side.
+  - NEVER have a zombie hand reaching toward camera without the glass clearly between them and us.
+  - NEVER draw zombies with their hands on the viewer's side of the glass.
+- The infected delivery driver is INSIDE the WALK-IN COOLER (separated by glass + door), NOT in the main store. He is also a stick figure with milky eyes.
 
 ## SPECIFIC PROPS
 - Hot dog roller: beat02 only (cold, off), mentioned again at end beat35.

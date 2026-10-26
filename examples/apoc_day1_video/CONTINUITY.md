@@ -75,6 +75,7 @@ MC's position by beat:
 - NO visible open wounds, NO dripping/streaming blood, NO exposed muscle/bone, NO torn flesh close-ups, NO faces squished/distorted against glass, NO faces twisted in agony at close range.
 - Infected/driver eye-change is shown as blank milky white eyes, not graphic facial deformity.
 - Monster/danger is conveyed through body language, silhouettes, speed lines, composition — NOT through graphic injury detail.
+- "Missing pieces" zombies are conveyed by CLOTHING ONLY: empty flapping sleeve (one-armed), ragged pant leg ending above where the foot would be, etc. NEVER draw a stump, exposed tissue, bone, dripping wound, or blood at the missing-part location.
 - Think "Walking Dead comic book suggestion of gore" — ink splatter, a few red stains — not photorealistic horror.
 
 ## THINGS TO AVOID IN EVERY PROMPT

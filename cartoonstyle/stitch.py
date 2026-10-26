@@ -80,23 +80,12 @@ def caption_events(m: dict, max_words: int = 5) -> list[tuple[float, float, str]
 
 def pil_burn_captions(entries: list[tuple[str, float]], moments: list[dict],
                       font_path: Path, out_dir: Path,
+                      W: int, H: int,
                       max_words: int = 6) -> list[tuple[str, float]]:
-    """PIL caption burner — renders Apple-style captions directly onto each
-    image at NATIVE resolution (no resizing). Snaps canvas to even dimensions
-    (x264 requirement) by right/bottom-padding with black if needed.
-
-    Returns the new list of (image_path, duration) entries pointing at
-    caption-burned copies.
-    """
+    """PIL caption burner — renders captions directly onto each image on a
+    uniform WxH black canvas (caller computes W,H). Returns new entries."""
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # ---- detect native resolution from the first frame & scale font to it ----
-    with Image.open(entries[0][0]) as probe:
-        nat_w, nat_h = probe.size
-    # Snap to even dimensions (x264 yuv420p requires even w/h)
-    W = nat_w + (nat_w % 2)
-    H = nat_h + (nat_h % 2)
-    # Font size scales with canvas: 58pt @ 1920px width = 3% of width
     size = max(32, int(W * 0.030))
     margin_v = max(50, int(H * 0.07))
     pad_between_lines = max(10, int(size * 0.18))
@@ -238,12 +227,31 @@ def main() -> None:
         if not entries:
             raise SystemExit("no images found")
 
-        # Detect native resolution from first image, snap to even for x264
-        with Image.open(entries[0][0]) as probe:
-            nat_w, nat_h = probe.size
-        W = nat_w + (nat_w % 2)
-        H = nat_h + (nat_h % 2)
-        print(f"[stitch] native resolution: {nat_w}x{nat_h} -> encode {W}x{H}", flush=True)
+        # Detect canvas: find MAX w/h across all frames, snap to even for x264
+        max_w = max_h = 0
+        for img_p, _sec in entries:
+            with Image.open(img_p) as probe:
+                ww, hh = probe.size
+            max_w = max(max_w, ww); max_h = max(max_h, hh)
+        W = max_w + (max_w % 2)
+        H = max_h + (max_h % 2)
+        print(f"[stitch] max frame {max_w}x{max_h} -> canvas {W}x{H}", flush=True)
+
+        def normalize(ent: list[tuple[str, float]], outdir: Path) -> list[tuple[str, float]]:
+            """Copy/paste every frame onto a uniform WxH black canvas (PIL) so
+            ffmpeg concat gets identical-sized inputs with no filter needed."""
+            outdir.mkdir(parents=True, exist_ok=True)
+            new_ent: list[tuple[str, float]] = []
+            for i, (img_p, sec) in enumerate(ent):
+                im = Image.open(img_p).convert("RGB")
+                if im.size != (W, H):
+                    canvas = Image.new("RGB", (W, H), (0, 0, 0))
+                    canvas.paste(im, (0, 0))
+                    im = canvas
+                out_p = outdir / f"frm_{i:04d}.png"
+                im.save(out_p, "PNG", optimize=False, compress_level=6)
+                new_ent.append((str(out_p), sec))
+            return new_ent
 
         def run_encode(ent: list[tuple[str, float]], vf: list[str]):
             lst2 = work / "all_active.txt"
@@ -252,16 +260,10 @@ def main() -> None:
                 lines2.append(f"file '{img}'\nduration {sec:.3f}\n")
             lines2.append(f"file '{ent[-1][0]}'\n")
             lst2.write_text("".join(lines2), encoding="utf-8")
-            scale_vf = []
-            # If input frames might be odd-dimensioned, pad to even
-            if nat_w % 2 or nat_h % 2:
-                scale_vf = ["-vf", f"pad={W}:{H}:0:0:black"]
-            if vf:
-                # combine with any extra filter
-                scale_vf = ["-vf", ",".join((scale_vf[0][4:] if scale_vf else "") + ("," + vf[0][4:] if vf and scale_vf else vf[0][4:] if vf else "")).strip(",")]
+            # No -vf needed if inputs are already at uniform WxH (PIL did it).
             subprocess.run(cmd_base + ["-f", "concat", "-safe", "0", "-i", str(lst2),
                                        "-i", str(narr),
-                                       *scale_vf,
+                                       *vf,
                                        "-c:v", "libx264", "-tune", "stillimage", "-r", str(args.fps),
                                        *aopts,
                                        "-c:a", "aac", "-b:a", "192k",
@@ -300,8 +302,11 @@ def main() -> None:
             pil_dir = work / "pil_captioned"
             cap_entries = pil_burn_captions(entries, moments,
                                             font_path if font_path.exists() else Path("/nonexistent"),
-                                            pil_dir)
-            # Captions already burned at even dims -> no extra vf needed.
+                                            pil_dir, W, H)
+            # pil_burn_captions already outputs uniform WxH frames at the native
+            # canvas size; still run normalize() to guarantee conformity.
+            norm_dir = work / "pil_norm"
+            cap_entries = normalize(cap_entries, norm_dir)
             lst_cap = work / "all_pil.txt"
             _write_concat(lst_cap, cap_entries)
             subprocess.run(cmd_base + ["-f", "concat", "-safe", "0", "-i", str(lst_cap),
@@ -313,7 +318,11 @@ def main() -> None:
                            check=True, capture_output=True)
             did_encode = True
         elif not args.captions:
-            run_encode(entries, [])
+            # Pre-normalize frames to identical even canvas via PIL so concat
+            # demuxer sees uniform inputs (ffmpeg's pad filter post-concat fails).
+            norm_dir = work / "normalized"
+            norm_entries = normalize(entries, norm_dir)
+            run_encode(norm_entries, [])
             did_encode = True
 
         print(f"[stitch] VIDEO -> {args.out}  ({len(entries)} word-locked images, one narration take)", flush=True)

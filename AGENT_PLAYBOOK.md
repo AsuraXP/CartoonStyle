@@ -182,3 +182,7 @@ Test the grep for [OK] against actual tts.py output format — tts prints `[OK]`
 - TTS runtime: ~30 sec edge-tts
 - Stitch runtime: 3–5 min ffmpeg encode on Kaggle CPU
 - Final video: ~5:00–5:30, ~30–60 MB MP4
+
+
+## Voice decision (post-audition)
+Narrator stays en-US-AndrewNeural at +0% — auditioned 8+ edge-tts candidates + explored ElevenLabs Todd route; user confirmed Andrew is the best free option. Standing default for VIDEO 5+ unless overridden.

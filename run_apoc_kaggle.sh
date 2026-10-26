@@ -32,27 +32,63 @@ git pull --ff-only origin arena/22c9cd35-cartoonstyle || true
 
 echo "=== [3/7] Acquiring caption font (Apple-style bold sans) ==="
 FONT_PATH=$WORK/CaptionFont.ttf
-if [ ! -f "$FONT_PATH" ] || [ $(stat -c%s "$FONT_PATH" 2>/dev/null || echo 0) -lt 50000 ]; then
-  # 1) apt package is cleanest on Kaggle/Debian images
-  apt-get -qq install -y fonts-inter 2>/dev/null && \
-    cp /usr/share/fonts/truetype/inter/Inter-Bold.ttf "$FONT_PATH" 2>/dev/null || true
-  # 2) direct download from multiple Inter mirrors (Google Fonts GitHub)
-  if [ $(stat -c%s "$FONT_PATH" 2>/dev/null || echo 0) -lt 50000 ]; then
+get_font_size() { stat -c%s "$1" 2>/dev/null || echo 0; }
+if [ ! -f "$FONT_PATH" ] || [ "$(get_font_size "$FONT_PATH")" -lt 50000 ]; then
+  # 1) Try apt fonts-inter package (Ubuntu/Kaggle/Debian)
+  apt-get -qq install -y fonts-inter fonts-dejavu-core 2>/dev/null || true
+  fc-cache -f 2>/dev/null || true
+  # Search known install locations for Inter Bold, then any Inter bold-ish variant
+  FOUND=""
+  for cand in \
+    /usr/share/fonts/truetype/inter/Inter-Bold.ttf \
+    /usr/share/fonts/truetype/Inter/Inter-Bold.ttf \
+    /usr/share/fonts/truetype/Inter-Bold.ttf \
+    /usr/share/fonts/opentype/inter/Inter-Bold.otf \
+    /usr/share/fonts/truetype/inter/Inter-Bold.ttf \
+    /usr/share/fonts/Inter-Bold.ttf ; do
+    if [ -f "$cand" ]; then FOUND="$cand"; break; fi
+  done
+  # Glob fallback — find any Inter Bold file
+  if [ -z "$FOUND" ]; then
+    FOUND=$(find /usr/share/fonts -iname "*inter*bold*" 2>/dev/null | head -1)
+  fi
+  # 2) Try downloading Inter Bold if apt didn't deliver it
+  if [ -z "$FOUND" ] || [ "$(get_font_size "$FOUND")" -lt 50000 ]; then
+    TMP_FONT=$WORK/_font_dl.ttf
     for url in \
       "https://raw.githubusercontent.com/rsms/inter/master/docs/font-files/Inter-Bold.ttf" \
-      "https://raw.githubusercontent.com/google/fonts/main/ofl/inter/static/Inter-Bold.ttf" \
-      "https://github.com/rsms/inter/raw/master/docs/font-files/Inter-Bold.ttf" ; do
-      curl -fsSL "$url" -o "$FONT_PATH" && \
-        python3 -c "from PIL import ImageFont; ImageFont.truetype('$FONT_PATH',48)" 2>/dev/null && break
-      rm -f "$FONT_PATH"
+      "https://raw.githubusercontent.com/google/fonts/main/ofl/inter/static/Inter-Bold.ttf" ; do
+      if curl -fsSL "$url" -o "$TMP_FONT" && \
+         python3 -c "from PIL import ImageFont; ImageFont.truetype('$TMP_FONT',48)" 2>/dev/null && \
+         [ "$(get_font_size "$TMP_FONT")" -gt 50000 ]; then
+        FOUND="$TMP_FONT"; break
+      fi
+      rm -f "$TMP_FONT"
     done
   fi
-  # 3) fallback: DejaVu Sans Bold (ships on basically every Linux image)
-  if [ $(stat -c%s "$FONT_PATH" 2>/dev/null || echo 0) -lt 50000 ]; then
-    cp /usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf "$FONT_PATH"
+  # 3) Fallback: any bold sans on the system (DejaVu, Liberation, Noto, etc.)
+  if [ -z "$FOUND" ] || [ "$(get_font_size "$FOUND")" -lt 50000 ]; then
+    for cand in \
+      /usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf \
+      /usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf \
+      /usr/share/fonts/truetype/noto/NotoSans-Bold.ttf \
+      /usr/share/fonts/truetype/freefont/FreeSans-Bold.ttf ; do
+      if [ -f "$cand" ]; then FOUND="$cand"; break; fi
+    done
+    if [ -z "$FOUND" ]; then
+      FOUND=$(find /usr/share/fonts -iname "*sans*bold*" -name "*.ttf" 2>/dev/null | head -1)
+    fi
+  fi
+  if [ -n "$FOUND" ] && [ -f "$FOUND" ]; then
+    cp "$FOUND" "$FONT_PATH"
   fi
 fi
-echo "   caption font -> $FONT_PATH ($(stat -c%s $FONT_PATH) bytes)"
+if [ ! -f "$FONT_PATH" ] || [ "$(get_font_size "$FONT_PATH")" -lt 50000 ]; then
+  echo "   !! WARNING: no bold sans font found; captions will use ffmpeg default"
+  FONT_PATH=""
+else
+  echo "   caption font -> $FONT_PATH ($(get_font_size $FONT_PATH) bytes)"
+fi
 
 echo "=== [4/7] CSV -> beats.jsonl ==="
 python -m cartoonstyle.csv_to_beats \

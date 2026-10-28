@@ -1,0 +1,39 @@
+# BRIEF — Night 1 (Trapped in My Bedroom)
+
+- **Topic / logline:** You're at your desk at 2:47 AM when a fast-zombie outbreak arrives. You spend night 1 barricaded inside your own bedroom with a dead phone, a desk lamp, a cat, and a neighbor on a 75-minute cycle at your door.
+- **Runtime target:** ~7–8 minutes (1,490 words)
+- **Voice:** en-US-AndrewNeural, +10%
+- **Narration POV:** second-person ("you …"), deadpan survival-story delivery
+- **Style:** B&W ink-wash with single-color accents:
+  - PRIMARY accent: WARM YELLOW desk lamp light (the only light source in most scenes; light pools, falloff into black)
+  - SECONDARY accent: RED, for blood splotches on zombies / Mr. Henderson's sneakers / pen writing on the wall, used sparingly for shock beats
+  - CAT is ORANGE on its first reveal (single big reveal frame — the only other color in the video besides yellow/red)
+  - Stick figures throughout: round white heads, thin black stick limbs, no pants
+  - MC: plain t-shirt (white/black fill), bare feet (stick feet), no identifying features — this is "you"
+  - ZOMBIES: milky white ALL-dot eyes (no pupils), ragged jagged shirt edges, small flat red blood splotches; NO grey skulls, NO teeth close-ups, NO pants/shoes/boots
+  - MR. HENDERSON (recurring zombie): white hair, cardigan sweater, recognizable sneakers (red accent)
+  - GIRL FROM 3B (ally): hoodie, backpack, hammer in belt, helmet hair, alive eyes (with pupils)
+  - High contrast, Walking-Dead-comic inkwash. Most scenes are LIT ONLY BY THE YELLOW DESK LAMP → pools of warm light against deep black.
+- **Hard rules — must appear:**
+  - Single bedroom set: desk with yellow lamp, bookshelf, dresser, bed/mattress, closet door, window with fire escape, door to hallway with 3/4" floor gap
+  - Hollow-core bedroom door (clearly flimsy)
+  - Bookshelf + dresser + mattress barricade against door
+  - 3/4 inch gap under the door (you see shoes/light through it)
+  - Desk lamp is the warm yellow anchor light for most of the video
+  - Cat revealed under the bed (orange on that frame)
+  - Girl from 3B at window with hammer + backpack
+  - Twin-bell alarm clock taped to textbook, lowered out window
+  - Wall note with Sharpie list (NIGHT 1, HENDERSON 75 MIN, THREE KNOCKS = FRIEND, LOUD = SOMEWHERE ELSE, CAT: STILL HERE, SHIFT NOT OVER) — text readable, yellow light illuminating it
+  - End card: climbing out the window onto fire escape with cat in backpack, lamp still on inside
+- **Hard rules — must NEVER appear:**
+  - Realistic human faces/figures (stick figures only)
+  - Teeth close-ups on zombies
+  - Pants/shoes on stick-figure bodies (Henderson's sneaker detail is a partial exception — he wears cardigan + recognizable sneakers, stick limbs)
+  - Any color outside of yellow lamp / red accent / orange cat except in very limited cues
+  - Outside scenes shown clearly — anything outside the window/door gap is in silhouette or half-lit
+  - Blood-drenched zombies (flat red splotches only)
+  - Captions / on-screen text other than the wall note
+- **Captions:** none
+- **Aspect:** 16:9
+- **Platform:** YouTube (landscape)
+- **Series continuity:** same inkwash style, same zombie rules (milky eyes, repeat behavior, turn toward loud sounds) as apoc_day1_video. Different MC/setting. Same universe.

@@ -1,21 +1,22 @@
 # STATE — bedroom_night1_video (Night 1: Trapped in My Bedroom)
 
-- **Current step:** Step 3 complete (script + spine DONE). Ready for Step 4 (style tests).
-- **Run mode:** SEAMLESS (stop at script + style lock — presented to user for approval)
-- **POV:** second-person ("you")
+- **Current step:** Step 4 COMPLETE (style tests locked, 4 anchors verified). Beginning Step 5 frame loop, batch 1 (beats 01–02, 8 frames).
+- **Run mode:** SEAMLESS
+- **POV:** second-person
 - **Voice:** en-US-AndrewNeural +10%
 - **Target runtime:** ~7:30–8:00 (1,490 words @ 3.1–3.3 wps)
-- **Setting:** single bedroom, 2nd-floor apartment, entire video seen from inside the room (only hints through gap/window)
-- **Color palette:** B&W ink-wash, primary YELLOW lamp accent, RED for spot cues, ORANGE cat
+- **Anchors locked (4):**
+  - test01_mc_desk.png ⭐ master lit-scene anchor
+  - test02_door_gap.png ⭐ door-gap/Henderson
+  - test03_barricade.png ⭐ dark-barricade (note: door shows edge-sliver; REMOVE sliver for story frames — door is fully closed)
+  - test04_cat.png ⭐⭐ orange cat (ALL-TIMER)
 - **Per-turn image cap:** 10
 - **Batch size:** 8 frames/turn, 2 held for repairs
-- **Frames total (visuals.csv rows):** 44 frames across 20 beats
-- **Batches projected:** ceil(44/8) = 6 batches + 1 style-test batch
-- **Projected turns with normal repair load:** ~8–10
+- **Frames total:** 44 (20 beats)
+- **Batches remaining:** 6
 - **Frames done:** 0
 - **Frames left:** 44
-- **Last verified batch:** N/A
-- **Anchors locked:** 0
 - **Declared exceptions:** none
 - **Open rejects:** none
-- **Next action:** Generate 3–4 style-test anchors (MC+desk yellow lamp, door gap/Henderson sneakers, barricaded door dark, orange cat under bed) to lock the look, then start 8-per-turn frame batches from beat01m01 forward.
+- **Key drift-watch items:** MC t-shirt stays pale (not red/blue); zombie eyes all-white no pupils; yellow lamp warm; Henderson sneakers red; cat bright orange; NO extra posters in room
+- **Next action:** Generate batch 1 — beat01m01 through beat02m02 (first 8 story frames, all lamp-on opening scenes), using test01 as primary anchor.

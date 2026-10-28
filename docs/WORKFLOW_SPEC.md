@@ -4,6 +4,31 @@ One episode: research → script → anchors → frames → measured render. Nar
 
 **This repo:** `https://github.com/AsuraXP/CartoonStyle.git` — working branch: `arena/20df3367-cartoonstyle`. All Kaggle cells delivered to the user are filled in with these real values (substitute only if the session actually works on a different branch — never leave `<...>` placeholders).
 
+## DIRECT PATHS — never search, never recreate (all you need, complete)
+
+Every script below already exists at this exact path. Paths are relative to the **repo root** (the checkout containing this file); the Kaggle clone lives at `/kaggle/working/video-repo`.
+
+| Purpose | Exact command |
+|---|---|
+| Phase 0 preflight (Kaggle) | `python /kaggle/working/video-repo/kaggle/preflight.py` |
+| Phase 0 offline check (workspace) | `python kaggle/preflight.py --validate-only` |
+| Phase 2 anchor/estimate gate (workspace) | `python kaggle/run.py --estimate --repo .` |
+| Phase 3 compress + contact sheet (workspace) | `python tools/prep_frames.py --repo . --sheet --strict` |
+| Phase 4 selftest gate (workspace) | `python tools/selftest.py` |
+| Phase 4 measure (Kaggle) | `python /kaggle/working/video-repo/kaggle/run.py --repo /kaggle/working/video-repo --dry-run` |
+| Phase 5 render (Kaggle) | `python /kaggle/working/video-repo/kaggle/run.py --repo /kaggle/working/video-repo --out final.mp4` |
+
+Inputs and outputs, so nothing has to be located either:
+
+- `narration/preflight.md` — Phase 0 passage (fixed; regenerate nothing)
+- `narration/narration.md` — Phase 1 script (you write this)
+- `frames.json` — repo root; Phase 2 anchors (you write this)
+- `kaggle/config.yaml` — all engine/visual settings (`estimate.sec_per_word` from measurement only)
+- `assets/frames/source/` in → `assets/frames/` JPGs out → `assets/contact_sheet.jpg`
+- `build/preflight/` — preflight audio + events; `build/timings.csv` + `build/timing.json` — Phase 4; `final.mp4` — Phase 5 (cwd of the render command)
+
+If a path above is ever missing, STOP and read the error / check `git log` — do not write a replacement script.
+
 ## FIRST ACTIONS (every session)
 1. Read PRODUCTION.md and `git log --oneline -5`. Establish what is already done. NEVER rebuild existing tooling (`vidsync/`, `kaggle/`, `tools/` are built, tested and frozen — run them, do not rewrite them), never redo completed phases, never re-test validated code unless something changed.
 2. Record the episode parameters in PRODUCTION.md before starting: topic, narrator voice.
@@ -26,6 +51,8 @@ If you ever feel the need to write, re-implement, extend, or "clean up" a script
 | `PRODUCTION.md` | Episode parameters, calibration record, gate status — read before anything else. | — |
 
 ### OFFLINE VERIFICATION — the only tests you need
+
+Run from the repo root (the directory holding this file):
 
 ```bash
 python kaggle/preflight.py --validate-only            # offline preflight logic (no synthesis)

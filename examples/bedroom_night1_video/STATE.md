@@ -1,22 +1,42 @@
 # STATE — bedroom_night1_video (Night 1: Trapped in My Bedroom)
 
-- **Current step:** Step 4 COMPLETE (style tests locked, 4 anchors verified). Beginning Step 5 frame loop, batch 1 (beats 01–02, 8 frames).
+- **Current step:** Step 5 COMPLETE — 44/44 frames generated on disk. Moving to Step 6 (QC + beats.jsonl build + TTS/Kaggle script prep).
 - **Run mode:** SEAMLESS
 - **POV:** second-person
 - **Voice:** en-US-AndrewNeural +10%
-- **Target runtime:** ~7:30–8:00 (1,490 words @ 3.1–3.3 wps)
-- **Anchors locked (4):**
-  - test01_mc_desk.png ⭐ master lit-scene anchor
-  - test02_door_gap.png ⭐ door-gap/Henderson
-  - test03_barricade.png ⭐ dark-barricade (note: door shows edge-sliver; REMOVE sliver for story frames — door is fully closed)
-  - test04_cat.png ⭐⭐ orange cat (ALL-TIMER)
-- **Per-turn image cap:** 10
-- **Batch size:** 8 frames/turn, 2 held for repairs
-- **Frames total:** 44 (20 beats)
-- **Batches remaining:** 6
-- **Frames done:** 0
-- **Frames left:** 44
-- **Declared exceptions:** none
-- **Open rejects:** none
-- **Key drift-watch items:** MC t-shirt stays pale (not red/blue); zombie eyes all-white no pupils; yellow lamp warm; Henderson sneakers red; cat bright orange; NO extra posters in room
-- **Next action:** Generate batch 1 — beat01m01 through beat02m02 (first 8 story frames, all lamp-on opening scenes), using test01 as primary anchor.
+- **Target runtime:** ~7:30–8:00 (1,490 words)
+- **Frames on disk:** 44 (see frames/ dir)
+- **Anchors locked (5):**
+  - test01_mc_desk.png ⭐ master lit-scene
+  - test02_door_gap.png ⭐ Henderson/door gap
+  - test03_barricade.png ⭐ dark barricade
+  - test04_cat.png ⭐⭐ cat under-bed angle
+  - test05_cat_floor.png ⭐⭐ cat floor/loaf angle
+
+## QC STATUS
+- beat01m01–m03, beat02m01–m02, beat03m01, beat04m02 ⭐⭐, beat06m01 ⭐, beat07m03 ✅, beat11m01 ✅ (v2 fixed extra eyes), beat20m04 ⭐⭐ — all visually verified and ACCEPTED.
+- beat07m04 — looked good during prior preview (lamp-off fading glow)
+- Remaining frames pending visual QC but exist on disk; spatial-composition concerns on beat07m03 (barricade not perfectly flush against door — accepted as "makeshift kid-barricade" vibe), beat08m02 not yet visually re-verified after v2 re-roll.
+- Known minor issues accepted: garbled text on objects (soda box etc.), MC feet sometimes obscured, cat is partially hidden on beat11m02/beat15m02 (acceptable since those are dark closet/siege scenes).
+
+## ASSEMBLY OUTSTANDING
+1. Quick QC sweep of remaining frames (spot-check beat08m02 v2, beat15m02, beat16m01, beat16m02, beat18m01, beat20m02)
+2. Write beats.jsonl — map each frame to its script moment with estimated durations
+3. Plan TTS splits (AndrewNeural +10%, sentence-level) — TTS done on Kaggle per standing pipeline rule
+4. Write Kaggle run script (run_apoc_kaggle.sh for bedroom variant or separate run_bedroom_kaggle.sh) — uses same pipeline as Video 5
+5. Update metadata.json with final counts, path to beats.jsonl
+6. Local commit of all 44 frames + scripts
+7. Provide Kaggle invocation cell to user
+
+## DRIFT WATCH VERDICT
+- MC t-shirt: stayed pale off-white/light-gray throughout — no red/blue drift observed ✅
+- MC head: large round pale white ✅
+- Yellow lamp: warm yellow ✅
+- Henderson sneakers: bright flat red ✅ (beat04m02 all-timer)
+- Cat: bright saturated orange tabby, grumpy loaf ✅ (beat11m01 v2 fixed extra eyes)
+- Bookshelf LEFT / bed RIGHT / door center-back: mostly held; barricade shots varied but readable ✅
+- No extra posters/X-Files: ✅ not observed on story frames
+- Zombie eyes all-white / ally pupils: ✅ held on frames I QC'd
+
+## Next action
+Do final spot-QC on the handful of unseen critical frames (beat08m02 v2, beat16m02, beat18m01, beat20m02), then build beats.jsonl by timing-estimate against visuals.csv, then write the Kaggle shell script. After that, user can push and run on Kaggle.

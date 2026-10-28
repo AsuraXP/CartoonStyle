@@ -4,9 +4,23 @@ One episode: research → script → anchors → frames → measured render. Nar
 
 **This repo:** `https://github.com/AsuraXP/CartoonStyle.git` — working branch: `arena/20df3367-cartoonstyle`. All Kaggle cells delivered to the user are filled in with these real values (substitute only if the session actually works on a different branch — never leave `<...>` placeholders).
 
+## GET THE REPO FIRST (if your workspace isn't already this repo)
+
+This prompt may be pasted into a session working in a different repo. The pipeline scripts exist ONLY in the repo above — do not write, recreate, or approximate them. First action: clone it into your workspace.
+
+```bash
+# from your workspace root, if not already cloned:
+git clone --branch arena/20df3367-cartoonstyle https://github.com/AsuraXP/CartoonStyle.git CartoonStyle
+cd CartoonStyle
+# if you already have the clone:
+git pull --ff-only
+```
+
+**REPO ROOT** = the directory containing `docs/WORKFLOW_SPEC.md` (the clone above). Every relative path and every workspace command below runs from REPO ROOT. If your session also has its own unrelated repo, stay inside the pipeline clone for all pipeline work — never copy the scripts out of it.
+
 ## DIRECT PATHS — never search, never recreate (all you need, complete)
 
-Every script below already exists at this exact path. Paths are relative to the **repo root** (the checkout containing this file); the Kaggle clone lives at `/kaggle/working/video-repo`.
+Every script below already exists at this exact path. Paths are relative to **REPO ROOT** (the clone from the section above); the Kaggle clone lives at `/kaggle/working/video-repo`.
 
 ### Where everything is in the repo
 

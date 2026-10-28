@@ -8,6 +8,36 @@ One episode: research → script → anchors → frames → measured render. Nar
 
 Every script below already exists at this exact path. Paths are relative to the **repo root** (the checkout containing this file); the Kaggle clone lives at `/kaggle/working/video-repo`.
 
+### Where everything is in the repo
+
+```
+CartoonStyle/                       repo root (clone URL + branch above)
+├── docs/WORKFLOW_SPEC.md           ← this prompt
+├── PRODUCTION.md                   episode params + calibration + gate status
+├── README.md                       pasteable Kaggle cells
+├── requirements.txt                pip deps (edge-tts, pyyaml, pillow)
+├── frames.json                     ← created in Phase 2, at ROOT (not in a subfolder)
+├── kaggle/
+│   ├── config.yaml                 engine + visual settings (all tuning lives here)
+│   ├── preflight.py                Phase 0 script (Kaggle; --validate-only works offline)
+│   └── run.py                      Phase 2/4/5 script (--estimate / --dry-run / --out)
+├── tools/
+│   ├── prep_frames.py              Phase 3 script (workspace)
+│   └── selftest.py                 Phase 4 gate script (workspace)
+├── vidsync/                        shared library — imported by the scripts above; never edit
+├── narration/
+│   ├── preflight.md                Phase 0 calibration passage (fixed)
+│   └── narration.md                Phase 1 script text (you write this)
+├── assets/
+│   ├── STYLE.md                    frozen style tokens (Phase 3, after user's choice)
+│   ├── frames/source/              generated source images (gitignored)
+│   ├── frames/                     reviewed 1280x720 JPGs (the only frames in Git)
+│   └── contact_sheet.jpg           written by prep_frames --sheet
+└── build/                          gitignored: preflight/, timings.csv, timing.json
+```
+
+### Exact commands
+
 | Purpose | Exact command |
 |---|---|
 | Phase 0 preflight (Kaggle) | `python /kaggle/working/video-repo/kaggle/preflight.py` |

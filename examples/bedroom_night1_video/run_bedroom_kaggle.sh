@@ -1,64 +1,89 @@
-#!/usr/bin/env bash
+#!/bin/bash
+# =============================================================================
+# VIDEO 6 — Night 1: Trapped in My Bedroom (Zombie Outbreak)
+# One-shot Kaggle build: pulls repo -> TTS (AndrewNeural +10%) -> word-locked stitch
+# (native resolution, no captions) -> deliverable zip.
 #
-# run_bedroom_kaggle.sh
-# Builds "Night 1: Trapped in My Bedroom" (Video 6) from beats.jsonl.
-# Designed to run on Kaggle (Linux, ffmpeg preinstalled).
-# Usage: bash CartoonStyle/examples/bedroom_night1_video/run_bedroom_kaggle.sh
-#
-# Steps:
-#   1. pip install edge-tts (Kaggle blocks TTS downloads but edge-tts is free & offline-free)
-#   2. For each beat in beats.jsonl, generate TTS mp3 (en-US-AndrewNeural, +10% rate)
-#   3. Extend every frame to its narration duration as a silent-padded mp4 (ffmpeg)
-#   4. Concat all clips to a single mp4
-#   5. Output: bedroom_night1.mp4 in the working directory
-set -euo pipefail
+# USAGE (Kaggle notebook cell):
+#   !rm -rf CartoonStyle img_pool
+#   !git clone --depth 1 --branch arena/22c9cd35-cartoonstyle https://github.com/AsuraXP/CartoonStyle.git
+#   !bash CartoonStyle/examples/bedroom_night1_video/run_bedroom_kaggle.sh
+# Output: /kaggle/working/bedroom_night1_DELIVERABLE.zip
+# =============================================================================
+set -e
 
-VIDEO_DIR="CartoonStyle/examples/bedroom_night1_video"
-BEATS="$VIDEO_DIR/beats.jsonl"
-OUT="bedroom_night1.mp4"
-WORK="img_pool/bedroom_build"
-VOICE="en-US-AndrewNeural"
-RATE="+10%"
+WORK=/kaggle/working
+REPO=$WORK/CartoonStyle
+VIDEO_DIR=$REPO/examples/bedroom_night1_video
+FRAMES=$VIDEO_DIR/frames
 
-echo "==> Installing edge-tts"
-pip install -q edge-tts
+echo "=== [1/5] Grabbing ffmpeg + pip deps ==="
+if ! which ffmpeg >/dev/null 2>&1; then
+  apt-get -qq update
+  apt-get -qq install -y ffmpeg
+fi
+pip install -q edge-tts pillow requests
 
-echo "==> Preparing work dir"
-rm -rf "$WORK"
-mkdir -p "$WORK/clips"
+echo "=== [2/5] Pulling CartoonStyle repo (frames + script + metadata) ==="
+cd $WORK
+if [ ! -d "$REPO" ]; then
+  git clone --depth 1 --branch arena/22c9cd35-cartoonstyle https://github.com/AsuraXP/CartoonStyle.git
+fi
+cd $REPO
+git pull --ff-only origin arena/22c9cd35-cartoonstyle || true
 
-echo "==> Generating TTS and per-frame clips"
-i=0
-while IFS= read -r line; do
-  i=$((i+1))
-  frame=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['frame'])" "$line")
-  text=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['narration'])" "$line")
-  dur=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['duration'])" "$line")
-  idx=$(printf "%03d" $i)
-  mp3="$WORK/clips/${idx}.mp3"
-  mp4="$WORK/clips/${idx}.mp4"
-  img="CartoonStyle/$frame"
+echo "=== [3/5] CSV -> beats.jsonl ==="
+python -m cartoonstyle.csv_to_beats \
+    --visuals "$VIDEO_DIR/visuals.csv" \
+    --out "$VIDEO_DIR/beats.jsonl"
 
-  # TTS
-  edge-tts --voice "$VOICE" --rate "$RATE" --text "$text" --write-media "$mp3" >/dev/null 2>&1
-
-  # Build clip: show image for the beat duration, mix TTS audio.
-  # If TTS runs longer than the scripted duration, use the TTS duration as truth (safety pad).
-  ffmpeg -y -loglevel error -loop 1 -i "$img" -i "$mp3" \
-    -c:v libx264 -tune stillimage -pix_fmt yuv420p -r 24 \
-    -c:a aac -b:a 128k -shortest -t "$dur" "$mp4"
-  echo "  [$idx] $frame  (scripted ${dur}s)"
-done < "$BEATS"
-
-echo "==> Concatenating clips"
-# Build concat list
-> "$WORK/concat.txt"
-for f in "$WORK"/clips/*.mp4; do
-  echo "file '$PWD/$f'" >> "$WORK/concat.txt"
+# Stitch expects filenames of the form beatNNmMM_v00_sSEED.png — our frames
+# are beatNNmMM.png, so alias each via symlinks in a sibling directory.
+echo "=== [4/5] Prepping v00 symlinks for stitch ==="
+IMG_POOL=$WORK/img_pool
+rm -rf "$IMG_POOL"; mkdir -p "$IMG_POOL"
+for f in "$FRAMES"/beat*.png; do
+  base=$(basename "$f" .png)
+  ln -sf "$f" "$IMG_POOL/${base}_v00_s00000.png"
 done
-ffmpeg -y -loglevel error -f concat -safe 0 -i "$WORK/concat.txt" \
-  -c:v libx264 -pix_fmt yuv420p -c:a aac -b:a 160k "$OUT"
+echo "   $(ls "$IMG_POOL" | wc -l) frame aliases ready in $IMG_POOL"
 
-echo "==> Done: $OUT"
-ls -lh "$OUT"
-ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$OUT" | awk '{printf "Final runtime: %dm%.0fs\n", int($1/60), $1%60}'
+echo "=== [5/5] TTS + stitch (AndrewNeural +10%, native resolution, no captions) ==="
+cd "$REPO"
+python -m cartoonstyle.tts \
+    --beats "$VIDEO_DIR/beats.jsonl" \
+    --out-dir "$VIDEO_DIR" \
+    --voice en-US-AndrewNeural \
+    --rate=+10% \
+    --visuals "$VIDEO_DIR/visuals.csv" 2>&1 | tee /tmp/tts_log.txt
+
+if ! grep -qE "moments locked.*\[OK\]|moments locked.*\[.*MISSED" /tmp/tts_log.txt; then
+  echo ""
+  echo "!!! TTS DID NOT LOCK ALL MOMENTS — check /tmp/tts_log.txt !!!"
+  exit 1
+fi
+
+python -m cartoonstyle.stitch \
+    --timing "$VIDEO_DIR/beats_with_timing.json" \
+    --images-dir "$IMG_POOL" \
+    --out "$VIDEO_DIR/VIDEO.mp4" \
+    --pick 0
+
+echo ""
+echo "=== Packaging deliverable zip ==="
+cd $WORK
+rm -f bedroom_night1_DELIVERABLE.zip
+zip -j bedroom_night1_DELIVERABLE.zip \
+    "$VIDEO_DIR/VIDEO.mp4" \
+    "$VIDEO_DIR/thumbnail.png" \
+    "$VIDEO_DIR/metadata.json" \
+    "$VIDEO_DIR/script.md" \
+    "$VIDEO_DIR/youtube.txt"
+
+echo ""
+echo "==========================================="
+ls -lh bedroom_night1_DELIVERABLE.zip
+echo ""
+echo "Contents:"
+unzip -l bedroom_night1_DELIVERABLE.zip
+echo "==========================================="

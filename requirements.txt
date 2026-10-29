@@ -1,0 +1,9 @@
+# Runtime dependencies (Kaggle + workspace).
+edge-tts>=7.0
+pyyaml>=6.0
+
+# Workspace tooling only (frame prep, contact sheet, selftest pixels).
+pillow>=10.0
+
+# Optional: selftest fallback ffmpeg when the system has none.
+imageio-ffmpeg>=0.4

@@ -1,0 +1,22 @@
+# Repo artifacts that must never enter Git (spec: three locations).
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Build artifacts: synthesized audio, timing outputs, videos (Kaggle outputs).
+build/
+
+# Generated source images stay out; only reviewed, compressed JPGs are committed.
+assets/frames/source/
+
+# Media binaries.
+*.mp3
+*.wav
+*.m4a
+*.mp4
+*.webm
+
+# Session scratch.
+Unselected files/
+*.log

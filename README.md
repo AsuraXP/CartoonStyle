@@ -21,7 +21,7 @@ branch `arena/20df3367-cartoonstyle` (drop the `-b` once this lands on `main`).
 ## Repository layout
 
 ```
-docs/WORKFLOW_SPEC.md    the workflow spec (v2.1) — the pasteable prompt
+docs/WORKFLOW_SPEC.md    the workflow spec (v2.2) — the pasteable prompt
 PRODUCTION.md            episode progress + calibration record
 frames.json              the ONLY source of truth for frame count (Phase 2)
 narration/preflight.md   Phase 0 calibration passage (~60 words, TTS-marked)
@@ -30,8 +30,10 @@ kaggle/config.yaml       engine + visual settings (sec_per_word filled by measur
 kaggle/preflight.py      Phase 0 entry point (Kaggle-only synthesis)
 kaggle/run.py            Phase 2/4/5 entry point: --estimate / --dry-run / --out
 vidsync/                 shared pipeline library (matching, timing, stitch, media)
+tools/doctor.py          ONE command: all four offline checks, PASS/FAIL/SKIP table
 tools/prep_frames.py     Phase 3: compress to 1280x720 JPG + contact sheet
 tools/selftest.py        Phase 4: offline pipeline proof (stand-in TTS, no network)
+tools/publish.py         Phase 6: runtime + chapter list from timings.csv
 assets/STYLE.md          frozen art style tokens (Phase 3, after user's choice)
 assets/frames/           reviewed compressed frame JPGs (committed)
 build/                   synthesis + timing artifacts (gitignored, Kaggle)
@@ -83,10 +85,12 @@ Render (REUSES the preserved Phase 4 audio/timing; never re-synthesizes):
 ## Workspace commands (never synthesize here)
 
 ```bash
-python kaggle/preflight.py --validate-only            # offline preflight checks
-python kaggle/run.py --estimate --repo .              # Gate 2: anchor/estimate check
+python tools/doctor.py                              # ONE shot: all four checks below
+python kaggle/preflight.py --validate-only          # (also in doctor) offline preflight
+python kaggle/run.py --estimate --repo .            # Gate 2: anchor/estimate check
 python tools/prep_frames.py --repo . --sheet --strict # Gate 3: compress + contact sheet
-python tools/selftest.py                              # Gate 4: pipeline selftest (43/43)
+python tools/selftest.py                            # Gate 4: pipeline selftest (43/43)
+python tools/publish.py --repo . --video final.mp4  # Gate 6: runtime + chapters
 ```
 
 These are the only tests needed — run them, never write new harnesses.

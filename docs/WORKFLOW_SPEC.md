@@ -1,4 +1,4 @@
-# NARRATION-FIRST EXPLAINER VIDEO — WORKFLOW (v2.1)
+# NARRATION-FIRST EXPLAINER VIDEO — WORKFLOW (v2.2)
 
 One episode: research → script → anchors → frames → measured render. Narration is the master timeline. Every phase ends with a GATE; do not start the next phase until it passes.
 
@@ -36,8 +36,10 @@ CartoonStyle/                       repo root (clone URL + branch above)
 │   ├── preflight.py                Phase 0 script (Kaggle; --validate-only works offline)
 │   └── run.py                      Phase 2/4/5 script (--estimate / --dry-run / --out)
 ├── tools/
+│   ├── doctor.py                   ONE command: runs all four offline checks below
 │   ├── prep_frames.py              Phase 3 script (workspace)
-│   └── selftest.py                 Phase 4 gate script (workspace)
+│   ├── selftest.py                 Phase 4 gate script (workspace)
+│   └── publish.py                  Phase 6 script: runtime + chapters from timings.csv
 ├── vidsync/                        shared library — imported by the scripts above; never edit
 ├── narration/
 │   ├── preflight.md                Phase 0 calibration passage (fixed)
@@ -54,6 +56,7 @@ CartoonStyle/                       repo root (clone URL + branch above)
 
 | Purpose | Exact command |
 |---|---|
+| All offline gates in one shot (workspace) | `python tools/doctor.py` |
 | Phase 0 preflight (Kaggle) | `python /kaggle/working/video-repo/kaggle/preflight.py` |
 | Phase 0 offline check (workspace) | `python kaggle/preflight.py --validate-only` |
 | Phase 2 anchor/estimate gate (workspace) | `python kaggle/run.py --estimate --repo .` |
@@ -61,17 +64,26 @@ CartoonStyle/                       repo root (clone URL + branch above)
 | Phase 4 selftest gate (workspace) | `python tools/selftest.py` |
 | Phase 4 measure (Kaggle) | `python /kaggle/working/video-repo/kaggle/run.py --repo /kaggle/working/video-repo --dry-run` |
 | Phase 5 render (Kaggle) | `python /kaggle/working/video-repo/kaggle/run.py --repo /kaggle/working/video-repo --out final.mp4` |
+| Phase 6 chapters + runtime (workspace) | `python tools/publish.py --repo . --video final.mp4` |
 
 Inputs and outputs, so nothing has to be located either:
 
 - `narration/preflight.md` — Phase 0 passage (fixed; regenerate nothing)
-- `narration/narration.md` — Phase 1 script (you write this)
+- `narration/narration.md` — Phase 1 script text (you write this)
 - `frames.json` — repo root; Phase 2 anchors (you write this)
 - `kaggle/config.yaml` — all engine/visual settings (`estimate.sec_per_word` from measurement only)
 - `assets/frames/source/` in → `assets/frames/` JPGs out → `assets/contact_sheet.jpg`
 - `build/preflight/` — preflight audio + events; `build/timings.csv` + `build/timing.json` — Phase 4; `final.mp4` — Phase 5 (cwd of the render command)
 
 If a path above is ever missing, STOP and read the error / check `git log` — do not write a replacement script.
+
+## FAST PATHS (same gates, fewer round trips — nothing below skips a gate)
+
+1. **One command instead of four:** `python tools/doctor.py` runs preflight-validate + estimate + prep-strict + selftest and prints one PASS/FAIL/SKIP table. SKIP = that phase's inputs don't exist yet (not a failure). Use the individual commands only when doctor points at one failing check.
+2. **Fewer frames = the biggest saving:** anchor every 20–35 narrated words (Phase 2), not every clause. Each frame you don't need is one less image to generate, QC, compress, push and render.
+3. **Batch everything:** fire all image calls of a batch in parallel; QC the entire batch from the single contact-sheet pass (Phase 3), opening frames full-size only when the sheet shows a possible defect.
+4. **Measure + render in one Kaggle round trip:** the Phase 5 fast path (zero warnings + exact precision → run both cells together, paste both outputs).
+5. **Phase 6 is mechanical:** `tools/publish.py` derives runtime and chapter timestamps from timings.csv — you only write the prose (title, description, thumbnail text).
 
 ## FIRST ACTIONS (every session)
 1. Read PRODUCTION.md and `git log --oneline -5`. Establish what is already done. NEVER rebuild existing tooling (`vidsync/`, `kaggle/`, `tools/` are built, tested and frozen — run them, do not rewrite them), never redo completed phases, never re-test validated code unless something changed.
@@ -84,10 +96,12 @@ If you ever feel the need to write, re-implement, extend, or "clean up" a script
 
 | File | What it does | Where it runs |
 |---|---|---|
+| `tools/doctor.py` | One-shot offline gate runner: executes preflight `--validate-only`, `run.py --estimate`, `prep_frames --strict`, and `selftest` in order; prints PASS/FAIL/SKIP; exit 0 = nothing failed. Orchestration only — no logic of its own. | workspace |
 | `kaggle/preflight.py` | **Phase 0**: synthesizes ONLY the marked passage of `narration/preflight.md` in one request (WordBoundary explicitly requested) and prints the calibration report: engine version, boundary type, words/event, coverage, source-word recovery, `sec_per_word`, `sync_source`. `--validate-only` runs all offline checks with no synthesis. | Kaggle (`--validate-only`: anywhere) |
 | `kaggle/run.py` | **Phase 2**: `--estimate` — offline anchor matching + pacing estimate, no network. **Phase 4**: `--dry-run` — one continuous synthesis of the full narration, measured timings → `build/timings.csv` + artifacts. **Phase 5**: `--out FILE` — renders, strictly REUSING Phase 4 artifacts (refuses to synthesize); reduced precision requires `--allow-reduced-precision`. | estimate: workspace; dry-run/out: Kaggle |
-| `tools/prep_frames.py` | **Phase 3**: compresses `assets/frames/source/*` → reviewed 1280×720 JPGs in `assets/frames/`; `--sheet` builds the contact sheet; `--strict` fails listing any frame missing from frames.json. Never generates images. | workspace |
+| `tools/prep_frames.py` | **Phase 3**: compresses `assets/frames/source/*` → reviewed 1280×720 JPGs in `assets/frames/`; `--sheet` builds the contact sheet (426×240 thumbs — the QC surface); `--strict` fails listing any frame missing from frames.json. Never generates images. | workspace |
 | `tools/selftest.py` | **Phase 4 gate**: offline end-to-end proof of the pipeline with a stand-in TTS backend (sync at anchors, measured holds, zero merges, error paths, transition minimum, reduced-precision approval). Expected result: `43 passed, 0 failed`. No network, no real TTS. | workspace |
+| `tools/publish.py` | **Phase 6**: reads `build/timings.csv` and prints measured runtime (probed from the render with `--video`) plus a paste-ready chapter list (frame ids → titles, ≥45 s apart, `--min-gap` to tune). Never estimates a timestamp. | workspace |
 | `vidsync/` | Shared library used by all of the above: anchor matching, text normalization, word-time recovery, timeline building, ffmpeg stitching, TTS backends (real TTS refuses to run outside Kaggle). Imported, never invoked directly, never edited. | library |
 | `kaggle/config.yaml` | Single source of engine/visual settings. `estimate.sec_per_word` is written ONLY from a measured preflight; stays `null` until then. | — |
 | `narration/preflight.md` | The fixed ~60-word TTS-marked calibration passage (Phase 0 input). | — |
@@ -96,7 +110,13 @@ If you ever feel the need to write, re-implement, extend, or "clean up" a script
 
 ### OFFLINE VERIFICATION — the only tests you need
 
-Run from the repo root (the directory holding this file):
+Run from REPO ROOT — one command covers everything:
+
+```bash
+python tools/doctor.py   # preflight-validate + estimate + prep-strict + selftest, one table
+```
+
+Targeted equivalents (doctor runs these; use when debugging a specific gate):
 
 ```bash
 python kaggle/preflight.py --validate-only            # offline preflight logic (no synthesis)
@@ -113,7 +133,7 @@ Run these against your actual inputs instead of writing new test scripts, harnes
 3. Never hand-set a frame duration. Durations are measured.
 4. Never generate a frame before its anchor exists (sole exception: the style reference, after the user selects the style).
 5. Anchors follow narrated meaning, not sentence count or cadence. Word-accurate sync requires verified word-level timing; reduced precision requires explicit approval.
-6. Every frame is looked at before it is pushed, and checked against its narrated subject/action.
+6. Every frame is looked at before it is pushed, and checked against its narrated subject/action. (The contact-sheet pass is that look; open full-size when anything is in doubt.)
 7. The style token block is copied VERBATIM into every prompt. Same negative block every time.
 8. Camera locked off. No ken burns, no zoom, no drift.
 9. Transitions at least 0.8 s (default 1.0 s), ending exactly at the incoming frame's anchor.
@@ -152,6 +172,7 @@ GATE 1: no markdown TTS would read aloud; every factual claim sourced; duration 
 
 ## PHASE 2 — ANCHORS (frames.json)
 - anchor_phrase copied VERBATIM from the narration, 3–8 words. Anchor where subject, action, location, explanation or visual idea changes. Multiple anchors per sentence allowed; one idea may span sentences. `occurrence` for any repeated phrase (1-based, negative from end). `transition` optional (config default otherwise). NEVER a duration field.
+- Frame economy: one anchor per real visual change, roughly every 20–35 narrated words (≈25–35 frames for a ~4-minute episode). Do not anchor every clause — every unnecessary frame costs a generation, a QC pass and render time. Never go so sparse that holds would exceed `max_hold` (warn at 12 s).
 - Entry: `{ "id", "anchor_phrase", "occurrence"?, "image_prompt", "negative_prompt"?, "transition"? }`. Before the style gate, image_prompt carries scene content with a style placeholder only — do not invent a style.
 
 GATE 2: `python kaggle/run.py --estimate --repo .` passes — every anchor matched, no MISSING/ambiguity/order errors, frame count equals frames.json entries, short/long holds reviewed as diagnostics only, runtime estimate reported with its basis (never a target).
@@ -159,13 +180,13 @@ GATE 2: `python kaggle/run.py --estimate --repo .` passes — every anchor match
 ## PHASE 3 — FRAMES + VISUAL QC (MANDATORY STOPS)
 1. STOP: the user selects the art style (their own choice; suggestions only on request; not a selection until they say so). Record it in `assets/STYLE.md`.
 2. Generate ONE reference frame in that style. STOP: the user approves it. Revise and repeat on rejection. Style gate: explicit style selection AND explicit reference approval before any episode frame.
-3. Then: freeze the style tokens; append the token block VERBATIM to every prompt, same negatives. Generate in small batches. Open every image. Reject: wrong subject/action, missing or unrecognizable named subject, off-model character, palette drift, text/watermarks/extra limbs, anything reading as a different film. Compare each batch against the reference frame and its exact narrated beat.
-4. `python tools/prep_frames.py --repo . --sheet --strict`. Review the contact sheet end to end in one pass; regenerate stand-outs. Push only looked-at compressed JPGs; source images stay out of Git.
+3. Then: freeze the style tokens; append the token block VERBATIM to every prompt, same negatives. Generate in small batches — fire every image call of a batch in parallel. Open every image. Reject: wrong subject/action, missing or unrecognizable named subject, off-model character, palette drift, text/watermarks/extra limbs, anything reading as a different film. Compare each batch against the reference frame and its exact narrated beat.
+4. `python tools/prep_frames.py --repo . --sheet --strict`. Review the contact sheet end to end in one pass — that pass is the look-at for every frame (rule 6); open full-size only stand-outs and anything the sheet flags, then regenerate stand-outs. Push only looked-at compressed JPGs; source images stay out of Git.
 
 GATE 3: style gate passed first; strict prep reports every frame present; every frame on-model and beat-accurate; frames well under 5 MB.
 
 ## PHASE 4 — MEASURE
-1. `python tools/selftest.py` must pass (43/43 as shipped; do not extend or rewrite without cause).
+1. `python tools/doctor.py` green (runs the selftest + every offline gate; `python tools/selftest.py` alone is acceptable when you only need that one check). Do not extend or rewrite tooling without cause.
 2. Push all reviewed frames and config. User runs:
 ```
 !git -C /kaggle/working/video-repo pull --ff-only
@@ -181,10 +202,13 @@ GATE 4: engine verified on the full narration (boundary type, coverage, recovery
 ```
 This reuses Phase 4 artifacts automatically and refuses to synthesize again. Reduced precision requires `--allow-reduced-precision` (explicit informed approval).
 
+**Fast path (one Kaggle round trip):** if the Phase 4 output shows zero warnings, zero merges and `anchor_precision` exact on every row, run the render cell immediately after the dry-run cell in the same notebook and paste both outputs together — the script still hard-fails on stale artifacts or unapproved reduced precision. If ANY warning appears: stop, two steps, verify first.
+
 GATE 5: duration within 1 s of the measured narration; rendered frame count equals frames.json; static picture static; every cut a visible transition; audio present and synced; the actual video reviewed end to end.
 
 ## PHASE 6 — PUBLISH (only after Gate 5)
-Order: thumbnail (text baked into the art, 3–4 words, legible at 336 px) → title (concrete, first person) → description (hook, honest summary, chapters cut from timings.csv, sources) → chapters verified line by line against timings.csv. Runtime in the description = rendered runtime.
+- Run `python tools/publish.py --repo . --video final.mp4` → measured runtime (probed from the render) + paste-ready chapter list derived from timings.csv.
+- Order: thumbnail (text baked into the art, 3–4 words, legible at 336 px) → title (concrete, first person) → description (hook, honest summary, chapters from the printed list — verified line by line against timings.csv, titles polished) → runtime in the description = rendered runtime.
 
 GATE 6: thumbnail legible at 336 px; chapter timestamps from timings.csv, not estimates; runtime matches the file.
 
@@ -193,4 +217,4 @@ ASSISTANT: research, script, anchors, frames + QC, code/config, ready-to-run cel
 USER: run the Kaggle cells, share output, choose the style, approve the reference, review timings.csv and the render, ship.
 
 ## ACCEPTANCE
-Every gate above is green — nothing more, nothing less. (Gates 0–6 already cover: measured preflight via clone/pull/run, no manual uploads, explicit style selection and reference approval, frames == frames.json, zero merges, resolved warnings, measured holds, exact or approved precision, beat-accurate frames, passing selftest, measured runtime, 336 px thumbnail, timings.csv chapters.)
+Every gate above is green — nothing more, nothing less. (Gates 0–6 already cover: measured preflight via clone/pull/run, no manual uploads, explicit style selection and reference approval, frames == frames.json, zero merges, resolved warnings, measured holds, exact or approved precision, beat-accurate frames, doctor green — selftest included, measured runtime, 336 px thumbnail, timings.csv chapters.)

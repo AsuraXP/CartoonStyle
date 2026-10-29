@@ -1,0 +1,46 @@
+# Phase 0 — TTS preflight calibration on a designated remote runner.
+#
+# Manual trigger only (calibration is on-demand, never on push).
+# NOTE: GitHub only allows dispatching a workflow that exists on the DEFAULT
+# branch — this file must be on `main` for `gh workflow run preflight.yml`
+# to work. Run it against any branch with:  gh workflow run preflight.yml --ref <branch>
+#
+# The report is printed in the job log (read it with `gh run view <id> --log`);
+# build/preflight/ (audio + events) is uploaded as an artifact.
+
+name: preflight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Engine version
+        run: python -c "import edge_tts; print('edge-tts', edge_tts.__version__)"
+
+      - name: Run Phase 0 preflight (one synthesis request, WordBoundary requested)
+        run: python kaggle/preflight.py
+
+      - name: Upload preflight artifacts (audio + events)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: preflight
+          path: build/preflight/
+          if-no-files-found: ignore

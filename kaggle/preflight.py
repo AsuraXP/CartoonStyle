@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Phase 0 - preflight TTS calibration (KAGGLE ONLY).
+"""Phase 0 - preflight TTS calibration (DESIGNATED REMOTE RUNNERS ONLY).
 
-Entry point (run inside a Kaggle notebook, internet enabled):
+Entry points (internet enabled; workspace never synthesizes):
 
+    # Kaggle notebook:
     python kaggle/preflight.py
+    # GitHub Actions (workflow `.github/workflows/preflight.yml`):
+    gh workflow run preflight.yml --ref <branch>   # report lands in the run log
 
 It resolves the repository from its own location, synthesizes ONLY the
 marked passage of narration/preflight.md in one continuous request, with
@@ -17,7 +20,8 @@ Offline syntax/logic checking WITHOUT synthesis (safe in the workspace):
 
     python kaggle/preflight.py --validate-only
 
-This script NEVER synthesizes outside Kaggle.
+This script NEVER synthesizes in the local workspace - only on Kaggle or
+the GitHub Actions preflight workflow.
 """
 
 from __future__ import annotations
@@ -41,7 +45,7 @@ from vidsync.timing import (  # noqa: E402
     SYNC_MEASURED_WORDS,
     recover_word_times,
 )
-from vidsync.tts import RealEdgeTTS, TTSError, is_kaggle  # noqa: E402
+from vidsync.tts import RealEdgeTTS, TTSError, is_remote_runner  # noqa: E402
 
 PREFLIGHT_MD = REPO_ROOT / "narration" / "preflight.md"
 BUILD_DIR = REPO_ROOT / "build" / "preflight"
@@ -205,15 +209,16 @@ def main() -> int:
     if args.validate_only:
         print("mode                : --validate-only (NO synthesis - workspace safe)")
         print("validate            : markers OK, passage OK, config OK")
-        print("sync_source         : n/a until measured on Kaggle")
+        print("sync_source         : n/a until measured on a remote runner")
         return 0
 
-    # --- synthesis is Kaggle-only -----------------------------------------
-    if not is_kaggle():
+    # --- synthesis only on designated remote runners (Kaggle / Actions) ----
+    if not is_remote_runner():
         print(
-            "\nPREFLIGHT REFUSING TO SYNTHESIZE OUTSIDE KAGGLE.\n"
+            "\nPREFLIGHT REFUSING TO SYNTHESIZE IN THE LOCAL WORKSPACE.\n"
             "The workspace must never run TTS (spec: three locations).\n"
-            "Run `python kaggle/preflight.py` in a Kaggle notebook.\n"
+            "Run it on a remote runner: a Kaggle notebook, or trigger the\n"
+            "`preflight` GitHub Actions workflow (gh workflow run preflight.yml).\n"
             "Use `python kaggle/preflight.py --validate-only` for offline checks here.",
             file=sys.stderr,
         )

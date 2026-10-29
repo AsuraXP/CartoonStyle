@@ -38,11 +38,24 @@ def is_kaggle() -> bool:
     return Path("/kaggle/working").exists()
 
 
+def is_remote_runner() -> bool:
+    """True on designated remote runners allowed to synthesize: a Kaggle
+    notebook or the GitHub Actions preflight workflow. The local workspace
+    matches neither - TTS stays forbidden there (spec: three locations;
+    Phases 4/5 additionally remain Kaggle-only)."""
+    import os
+
+    if os.environ.get("GITHUB_ACTIONS"):
+        return True
+    return is_kaggle()
+
+
 def require_kaggle_for_synthesis() -> None:
-    if not is_kaggle():
+    if not is_remote_runner():
         raise TTSError(
-            "REFUSING to synthesize outside Kaggle (spec: the workspace must NEVER "
-            "run TTS). Run this step in a Kaggle notebook with internet enabled."
+            "REFUSING to synthesize in the local workspace (spec: the workspace "
+            "must NEVER run TTS). Run on a designated remote runner: a Kaggle "
+            "notebook with internet, or the preflight GitHub Actions workflow."
         )
 
 

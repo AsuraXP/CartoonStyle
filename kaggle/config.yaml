@@ -1,0 +1,40 @@
+# Narration-first explainer pipeline - engine and visual settings.
+#
+# RULES:
+#  * estimate.sec_per_word is written ONLY from an actual Kaggle preflight
+#    measurement (Phase 0). Never invent it. It is null until measured.
+#  * Changing engine, edge-tts version, voice, rate or boundary mode requires
+#    re-running the Phase 0 calibration and updating PRODUCTION.md.
+#  * Transitions: 0.8 s absolute minimum (flat 2D art), 1.0 s default.
+#  * Nothing here sets frame durations. Durations are MEASURED.
+
+tts:
+  voice: "en-US-AndrewNeural"             # user-selected 2026-10-28 (re-calibrate after any change)
+  rate: "+10%"
+  volume: "+0%"
+  pitch: "+0Hz"
+  boundary: "WordBoundary"                # requested EXPLICITLY; never rely on the engine default
+
+estimate:
+  sec_per_word: null                      # <- filled from measured preflight: audio_duration / words
+  fallback_sec_per_word: 0.40             # diagnostics only until calibrated; always labelled
+
+transitions:
+  default: "fade"
+  duration_s: 1.0
+  min_duration_s: 0.8
+
+video:
+  width: 1280
+  height: 720
+  fps: 30
+
+frames:
+  dir: "assets/frames"                    # reviewed, compressed 1280x720 JPGs (committed)
+  source_dir: "assets/frames/source"      # original generated images (gitignored)
+
+paths:
+  narration: "narration/narration.md"
+  frames_json: "frames.json"
+  style: "assets/STYLE.md"
+  build_dir: "build"
